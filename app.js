@@ -6,11 +6,12 @@ const STORAGE_KEY = "gift_wishlist_data";
 let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
-let html5Qrcode = null;
+let ocrWorker = null;
 
 // ===== 初始化 =====
 document.addEventListener("DOMContentLoaded", () => {
     loadGifts();
+    renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
@@ -31,7 +32,7 @@ function loadGifts() {
         const d = localStorage.getItem(STORAGE_KEY);
         if (d) gifts = JSON.parse(d);
     } catch(e) {}
-    // 兼容旧数据：给没有 image 字段的礼物补充 image 字段
+    // 兼容旧数据
     gifts.forEach(g => { if (!g.image) g.image = ""; });
     if (!gifts.length) gifts = getDefaultGifts();
 }
@@ -46,16 +47,41 @@ function getDefaultGifts() {
     ];
 }
 
-// ===== 渲染 =====
+// ===== 分类图标区 =====
+function renderCatGrid() {
+    const cats = [
+        {key:"电子产品", icon:"📱", label:"电子产品", color:"#e3f2fd"},
+        {key:"书籍", icon:"📚", label:"书籍", color:"#fce4ec"},
+        {key:"配饰", icon:"👜", label:"配饰", color:"#f3e5f5"},
+        {key:"家居", icon:"🏠", label:"家居", color:"#e8f5e9"},
+        {key:"美妆", icon:"💄", label:"美妆", color:"#fce4ec"},
+        {key:"运动", icon:"⚽", label:"运动", color:"#e0f7fa"},
+        {key:"其他", icon:"🎁", label:"其他", color:"#fff3e0"},
+    ];
+
+    const counts = {};
+    gifts.forEach(g => { if (!g.received) counts[g.cat] = (counts[g.cat]||0) + 1; });
+
+    document.getElementById("cat-grid").innerHTML = cats.map(c => `
+        <div class="cat-card ${currentFilter===c.key?'active':''}" onclick="setFilter('${c.key}')">
+            <div class="cat-icon" style="background:${c.color};">${c.icon}</div>
+            <div class="cat-label">${c.label}</div>
+            <div class="cat-count">${counts[c.key]||0}</div>
+        </div>
+    `).join("");
+}
+
+// ===== 渲染标签 =====
 function renderTags() {
-    const cats = ["全部", "想要", "已收到", "电子产品", "书籍", "配饰", "家居", "美妆", "运动", "其他"];
-    document.getElementById("tags").innerHTML = cats.map(c =>
-        `<button class="tag ${c===currentFilter?'active':''}" onclick="setFilter('${c}')">${c}</button>`
+    const tags = ["全部", "想要", "已收到"];
+    document.getElementById("tags").innerHTML = tags.map(t =>
+        `<button class="tag ${t===currentFilter?'active':''}" onclick="setFilter('${t}')">${t}</button>`
     ).join("");
 }
 
 function setFilter(f) {
     currentFilter = f;
+    renderCatGrid();
     renderTags();
     renderGrid();
 }
@@ -139,9 +165,10 @@ function openEdit(id = null) {
     document.getElementById("fetch-url").value = "";
     document.getElementById("quick-paste").value = "";
     document.getElementById("edit-image-url").value = "";
-    document.getElementById("scan-result").style.display = "none";
+    document.getElementById("ocr-result").style.display = "none";
+    document.getElementById("ocr-progress").style.display = "none";
+    document.getElementById("ocr-preview-area").style.display = "none";
     document.getElementById("image-preview").innerHTML = '<div class="image-placeholder">暂无图片</div>';
-    stopScan();
 
     if (id) {
         const g = gifts.find(x => x.id === id);
@@ -173,51 +200,132 @@ function setImageFromUrl(url) {
     }
 }
 
-// ===== 二维码扫描 =====
-function startScan() {
-    const scanArea = document.getElementById("scan-area");
-    const scanResult = document.getElementById("scan-result");
-    scanArea.style.display = "block";
-    scanResult.style.display = "none";
+// ===== OCR 截图识别 =====
+function handleOcrUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-    if (!html5Qrcode) {
-        html5Qrcode = new Html5Qrcode("reader");
-    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const imgData = e.target.result;
+        // 显示预览
+        document.getElementById("ocr-preview-img").src = imgData;
+        document.getElementById("ocr-preview-area").style.display = "block";
+        // 开始 OCR
+        startOcr(imgData);
+    };
+    reader.readAsDataURL(file);
+}
 
-    html5Qrcode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-            // 扫描成功
-            stopScan();
-            onQrCodeScanned(decodedText);
-        },
-        (errorMessage) => {
-            // 扫描中（忽略）
+async function startOcr(imageData) {
+    const progressDiv = document.getElementById("ocr-progress");
+    const progressText = document.getElementById("ocr-progress-text");
+    const progressFill = document.getElementById("ocr-progress-fill");
+    const resultDiv = document.getElementById("ocr-result");
+
+    progressDiv.style.display = "block";
+    resultDiv.style.display = "none";
+    progressText.textContent = "正在加载识别引擎...";
+    progressFill.style.width = "10%";
+
+    try {
+        showToast("正在识别图片文字...");
+
+        progressText.textContent = "正在识别文字...";
+        progressFill.style.width = "30%";
+
+        const result = await Tesseract.recognize(imageData, "chi_sim+eng", {
+            logger: (m) => {
+                if (m.status === "recognizing text") {
+                    const p = Math.round(30 + m.progress * 60);
+                    progressFill.style.width = p + "%";
+                    progressText.textContent = "正在识别文字... " + Math.round(m.progress * 100) + "%";
+                }
+            }
+        });
+
+        progressFill.style.width = "95%";
+        progressText.textContent = "识别完成，正在解析...";
+
+        const text = result.data.text;
+        console.log("OCR识别结果：", text);
+
+        // 解析商品名称（取第一行非空文本，去除价格信息）
+        let name = "";
+        const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+        for (const line of lines) {
+            // 跳过纯价格行、跳过太短的行
+            if (/^[\d¥￥$.,\s]+$/.test(line)) continue;
+            if (line.length < 2) continue;
+            name = line.substring(0, 50);
+            break;
         }
-    ).catch(err => {
-        scanResult.className = "fetch-result error";
-        scanResult.innerHTML = "❌ 无法启动摄像头，请检查权限设置。<br><small>你也可以手动粘贴链接。</small>";
-        scanResult.style.display = "block";
+
+        // 解析价格
+        let price = 0;
+        const pricePatterns = [
+            /[¥￥]\s*([\d,]+\.?\d*)/,
+            /\(\s*RMB\s*\)?\s*([\d,]+\.?\d*)/i,
+            /价格[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
+            /([\d,]+\.?\d*)\s*元?/,
+        ];
+        for (const p of pricePatterns) {
+            const m = text.match(p);
+            if (m) { price = parseInt(m[1].replace(/,/g, "")); break; }
+        }
+
+        progressFill.style.width = "100%";
+        progressDiv.style.display = "none";
+
+        // 填入表单
+        if (name) document.getElementById("edit-name").value = name;
+        if (price) document.getElementById("edit-price").value = price;
+
+        // 将截图转为商品图片（压缩后）
+        await setOcrImage(imageData);
+
+        resultDiv.className = "fetch-result success";
+        resultDiv.innerHTML = `✅ 识别成功！<br>名称：${esc(name)}<br>价格：¥${price || "未识别"}<br>图片已自动填入，请确认后保存。`;
+        resultDiv.style.display = "block";
+        showToast("识别成功！");
+
+    } catch(err) {
+        console.error("OCR失败：", err);
+        progressDiv.style.display = "none";
+        resultDiv.className = "fetch-result error";
+        resultDiv.innerHTML = `❌ 文字识别失败：${esc(err.message)}<br>请手动填写商品信息。`;
+        resultDiv.style.display = "block";
+        showToast("识别失败，请手动填写");
+    }
+}
+
+async function setOcrImage(imageData) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement("canvas");
+            // 压缩图片：最大宽度 400px
+            let w = img.width;
+            let h = img.height;
+            if (w > 400) { h = h * 400 / w; w = 400; }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            // 转为 JPEG data URL（质量 0.7）
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+            document.getElementById("edit-image").value = dataUrl;
+            document.getElementById("edit-image-url").value = dataUrl;
+            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
+            resolve();
+        };
+        img.src = imageData;
     });
 }
 
-function stopScan() {
-    if (html5Qrcode && html5Qrcode.isScanning) {
-        html5Qrcode.stop().catch(() => {});
-    }
-    document.getElementById("scan-area").style.display = "none";
-}
-
-function onQrCodeScanned(url) {
-    const scanResult = document.getElementById("scan-result");
-    scanResult.className = "fetch-result success";
-    scanResult.innerHTML = `✅ 扫描成功！正在识别商品信息...`;
-    scanResult.style.display = "block";
-
-    // 把扫描到的URL填入链接框并自动识别
-    document.getElementById("fetch-url").value = url;
-    fetchFromLink();
+function cancelCrop() {
+    document.getElementById("ocr-preview-area").style.display = "none";
+    document.getElementById("ocr-result").style.display = "none";
 }
 
 // ===== 快速粘贴解析 =====
@@ -228,31 +336,24 @@ function quickParse() {
         return;
     }
 
-    // 提取价格（支持 ¥ ￥ $ 多种格式）
     const priceMatch = text.match(/[¥￥$]?\s*([\d,]+\.?\d*)/);
     let price = null;
     if (priceMatch) {
         price = parseInt(priceMatch[1].replace(/,/g, ""));
     }
 
-    // 提取商品名称（取第一行或前50个字符）
     let name = text.split("\n")[0].trim();
-    // 去除价格信息
     name = name.replace(/[¥￥$]\s*[\d,]+\.?\d*/g, "").trim();
-    // 如果名称太长，取前50个字符
     if (name.length > 50) {
         name = name.substring(0, 50);
     }
 
-    // 自动填表
     if (name) document.getElementById("edit-name").value = name;
     if (price) document.getElementById("edit-price").value = price;
 
-    // 检查是否包含淘宝/京东链接
     const linkMatch = text.match(/(https?:\/\/[^\s]+)/);
     if (linkMatch) {
         document.getElementById("edit-link").value = linkMatch[1];
-        // 自动尝试抓取图片
         document.getElementById("fetch-url").value = linkMatch[1];
         setTimeout(() => fetchFromLink(), 500);
     }
@@ -260,7 +361,7 @@ function quickParse() {
     showToast("✅ 已自动填入，正在获取图片...");
 }
 
-// ===== 链接识别（调用多个API尝试）=====
+// ===== 链接识别 =====
 async function fetchFromLink() {
     const url = document.getElementById("fetch-url").value.trim();
     if (!url) {
@@ -274,20 +375,9 @@ async function fetchFromLink() {
     btn.textContent = "识别中...";
     resultDiv.style.display = "none";
 
-    // 尝试多个免费API
-    const apiList = [
-        // API 1: oioweb（淘宝/京东）
-        `https://api.oioweb.cn/api/common/TbPc?url=${encodeURIComponent(url)}`,
-        // API 2: vvhan
-        `https://api.vvhan.com/api/TbPc?url=${encodeURIComponent(url)}`,
-        // API 3: 尝试直接抓取（通过CORS代理）
-        `https://corsproxy.io/?${encodeURIComponent(url)}`
-    ];
-
     try {
         showToast("正在识别...");
 
-        // 方式1：调用免费商品API
         let data = null;
         let apiSuccess = false;
 
@@ -303,7 +393,6 @@ async function fetchFromLink() {
             }
         } catch(e) {}
 
-        // 如果第一个API失败，尝试 vvhan API
         if (!apiSuccess) {
             try {
                 const res2 = await fetch(`https://api.vvhan.com/api/TbPc?url=${encodeURIComponent(url)}`, {
@@ -321,7 +410,6 @@ async function fetchFromLink() {
         btn.textContent = "识别";
 
         if (apiSuccess && data) {
-            // 识别成功
             const name = data.title || data.name || "";
             const price = data.price ? parseInt(String(data.price).replace(/[^\d]/g, "")) : 0;
             const image = data.img || data.image || data.pic || "";
@@ -340,7 +428,6 @@ async function fetchFromLink() {
             resultDiv.style.display = "block";
             showToast("识别成功！");
         } else {
-            // API全部失败，尝试用 CORS 代理抓取页面
             await fetchByCorsProxy(url);
         }
     } catch(err) {
@@ -350,24 +437,20 @@ async function fetchFromLink() {
     }
 }
 
-// ===== 通过CORS代理抓取 =====
 async function fetchByCorsProxy(url) {
     const btn = document.getElementById("btn-fetch");
     const resultDiv = document.getElementById("fetch-result");
 
     try {
         showToast("正在通过代理抓取...");
-
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
         const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
         const html = await res.text();
 
-        // 从HTML中提取标题
         let name = "";
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (titleMatch) name = titleMatch[1].trim();
 
-        // 尝试提取价格
         let price = 0;
         const pricePatterns = [
             /"price"[:\s]+"?(\d+\.?\d*)/i,
@@ -380,7 +463,6 @@ async function fetchByCorsProxy(url) {
             if (m) { price = parseInt(m[1]); break; }
         }
 
-        // 尝试提取图片
         let image = "";
         const imgPatterns = [
             /"img"\s*:\s*"([^"]+)"/,
@@ -478,6 +560,7 @@ function saveGift() {
     }
 
     saveGifts();
+    renderCatGrid();
     renderGrid();
     updateStats();
     renderAdminList();
@@ -489,6 +572,7 @@ function deleteGift(id) {
     if (!confirm("确定删除？")) return;
     gifts = gifts.filter(g => g.id !== id);
     saveGifts();
+    renderCatGrid();
     renderGrid();
     updateStats();
     renderAdminList();
@@ -500,6 +584,7 @@ function toggleRecv(id) {
     if (!g) return;
     g.received = !g.received;
     saveGifts();
+    renderCatGrid();
     renderGrid();
     updateStats();
     renderAdminList();
@@ -513,7 +598,7 @@ function viewDetail(id) {
 
     let imgHtml = "";
     if (g.image) {
-        imgHtml = `<img src="${esc(g.image)}" style="width:100%;max-width:260px;border-radius:12px;margin-bottom:12px;" onerror="this.style.display='none'">`;
+        imgHtml = `<img src="${esc(g.image)}" style="width:100%;max-width:260px;border-radius:12px;margin-bottom:12px;box-shadow:0 4px 16px rgba(0,0,0,0.1);" onerror="this.style.display='none'">`;
     }
 
     let html = `
@@ -531,22 +616,19 @@ function viewDetail(id) {
     `;
 
     if (g.link) {
-        // 判断链接类型，使用深度链接
         const isTaobao = /taobao\.com|tmall\.com/.test(g.link);
         const isJD = /jd\.com|jingdong\.com/.test(g.link);
-        
+
         let deepLink = g.link;
         let deepLinkText = "🛒 去购买";
-        
+
         if (isTaobao) {
-            // 淘宝深度链接
             const itemMatch = g.link.match(/id=(\d+)/);
             if (itemMatch) {
                 deepLink = `taobao://item.taobao.com/item.htm?id=${itemMatch[1]}`;
                 deepLinkText = "🛒 在淘宝App中打开";
             }
         } else if (isJD) {
-            // 京东深度链接
             const skuMatch = g.link.match(/\/(\d+)\.html/);
             if (skuMatch) {
                 deepLink = `openapp.jdmobile://virtual?params={"category":"jump","des":"productDetail","skuId":"${skuMatch[1]}"}`;
@@ -556,8 +638,8 @@ function viewDetail(id) {
 
         html += `
             <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
-                <a href="javascript:void(0)" onclick="openAppLink('${esc(g.link)}','${esc(deepLink)}')" style="padding:14px 32px;background:linear-gradient(135deg,#ff6b8a,#ff8eb4);color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600;display:inline-block;cursor:pointer;">${deepLinkText}</a>
-                <a href="${esc(g.link)}" target="_blank" style="padding:14px 32px;background:#f0f0f0;color:#666;text-decoration:none;border-radius:14px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;">浏览器打开</a>
+                <a href="javascript:void(0)" onclick="openAppLink('${esc(g.link)}','${esc(deepLink)}')" style="padding:14px 32px;background:linear-gradient(135deg,#ff6b8a,#ff8eb4);color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600;display:inline-block;cursor:pointer;border:none;font-family:inherit;">${deepLinkText}</a>
+                <a href="${esc(g.link)}" target="_blank" style="padding:14px 32px;background:#f0f0f0;color:#666;text-decoration:none;border-radius:14px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;font-family:inherit;">浏览器打开</a>
             </div>
             <div style="color:#999;font-size:12px;margin-top:8px;">如未安装App，将自动在浏览器中打开</div>
         `;
@@ -572,25 +654,23 @@ function viewDetail(id) {
 
 // ===== 深度链接跳转 =====
 function openAppLink(webUrl, deepLink) {
-    // 先尝试打开App（深度链接）
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
     iframe.src = deepLink;
     document.body.appendChild(iframe);
 
-    // 如果App未安装，降级到网页链接
     const timer = setTimeout(() => {
         window.location.href = webUrl;
     }, 1500);
 
-    // 如果App成功打开，清除定时器
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) clearTimeout(timer);
     });
 
-    // 2秒后清除iframe
     setTimeout(() => {
-        document.body.removeChild(iframe);
+        if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+        }
     }, 2000);
 
     showToast("正在打开App...");
@@ -623,6 +703,4 @@ function closeModal(id) {
     document.getElementById(id).classList.remove("open");
     const any = document.querySelectorAll(".modal.open").length;
     if (!any) document.body.style.overflow = "";
-    // 关闭弹窗时停止扫描
-    if (id === "modal-edit") stopScan();
 }

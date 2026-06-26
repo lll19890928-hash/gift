@@ -8,7 +8,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#ff6b8a">
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     <!-- 顶部 -->
@@ -25,6 +25,9 @@
         <div class="stat"><span id="stat-want">0</span> 件想要</div>
         <div class="stat">¥<span id="stat-price">0</span></div>
     </div>
+
+    <!-- 分类图标区 -->
+    <div class="cat-grid" id="cat-grid"></div>
 
     <!-- 筛选标签 -->
     <div class="tags" id="tags"></div>
@@ -69,16 +72,31 @@
                     <input type="hidden" id="edit-id">
                     <input type="hidden" id="edit-image">
 
-                    <!-- 方式一：扫描二维码 -->
+                    <!-- 方式一：截图OCR识别 -->
                     <div class="fetch-section">
-                        <div class="fetch-title">📷 方式一：扫描商品二维码</div>
-                        <div class="fetch-desc">用摄像头扫描商品二维码，自动识别商品信息</div>
-                        <button type="button" class="fetch-btn" onclick="startScan()" style="width:100%;margin-bottom:8px;">📷 扫描二维码</button>
-                        <div id="scan-area" style="display:none;">
-                            <div id="reader" style="width:100%;"></div>
-                            <button type="button" class="fetch-btn" onclick="stopScan()" style="width:100%;margin-top:8px;background:#999;">取消扫描</button>
+                        <div class="fetch-title">📷 方式一：上传截图自动识别（推荐）</div>
+                        <div class="fetch-desc">上传淘宝/京东商品截图，自动识别商品名称、价格并提取图片</div>
+                        <div class="ocr-upload-area" id="ocr-upload-area" onclick="document.getElementById('ocr-file-input').click()">
+                            <div class="ocr-upload-icon">📷</div>
+                            <div class="ocr-upload-text">点击上传商品截图</div>
+                            <div class="ocr-upload-hint">支持 PNG、JPG 格式</div>
                         </div>
-                        <div class="fetch-result" id="scan-result" style="display:none;"></div>
+                        <input type="file" id="ocr-file-input" accept="image/*" style="display:none;" onchange="handleOcrUpload(event)">
+                        <div class="ocr-progress" id="ocr-progress" style="display:none;">
+                            <div class="ocr-progress-text" id="ocr-progress-text">正在识别...</div>
+                            <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocr-progress-fill"></div></div>
+                        </div>
+                        <div class="fetch-result" id="ocr-result"></div>
+                        <!-- 截图预览 + 裁剪 -->
+                        <div class="ocr-preview-area" id="ocr-preview-area" style="display:none;">
+                            <div class="ocr-preview-label">商品图片预览（可调整）</div>
+                            <canvas id="ocr-canvas" style="display:none;"></canvas>
+                            <img id="ocr-preview-img" class="ocr-preview-img" src="" alt="预览">
+                            <div class="ocr-crop-btns">
+                                <button type="button" class="ocr-crop-btn" onclick="cropProductImage()">✅ 使用此图</button>
+                                <button type="button" class="ocr-crop-btn ocr-crop-btn-cancel" onclick="cancelCrop()">重新上传</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 方式二：粘贴链接识别 -->
@@ -94,7 +112,7 @@
 
                     <!-- 方式三：快速粘贴 -->
                     <div class="fetch-section" style="margin-top:12px;">
-                        <div class="fetch-title">⚡ 方式三：快速粘贴（推荐）</div>
+                        <div class="fetch-title">⚡ 方式三：快速粘贴</div>
                         <div class="fetch-desc">从淘宝/京东App复制商品标题+价格，粘贴到下方，自动识别填入</div>
                         <textarea id="quick-paste" placeholder="粘贴商品标题和价格，例如：&#10;Apple iPhone 15 Pro Max 256GB 蓝色钛金属&#10;¥9,299.00" class="quick-paste-box"></textarea>
                         <button type="button" class="fetch-btn" onclick="quickParse()" style="width:100%;margin-top:8px;">一键识别填入</button>

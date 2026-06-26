@@ -60,6 +60,75 @@ body {
     color: #ff6b8a;
 }
 
+/* ===== 分类图标区 ===== */
+.cat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #f0e0ec;
+}
+.cat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 4px 10px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: #fafafa;
+}
+.cat-card:active { transform: scale(0.93); }
+.cat-card.active {
+    background: linear-gradient(135deg, #fff0f4, #ffeef2);
+    box-shadow: 0 2px 12px rgba(255,107,138,0.15);
+}
+.cat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 6px;
+}
+.cat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-align: center;
+    line-height: 1.2;
+}
+.cat-card.active .cat-label {
+    color: #ff6b8a;
+}
+.cat-count {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #ff6b8a;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s;
+}
+.cat-card.active .cat-count,
+.cat-count:not(:empty) {
+    opacity: 1;
+    transform: scale(1);
+}
+
 /* ===== 筛选标签 ===== */
 .tags {
     display: flex;
@@ -85,6 +154,104 @@ body {
 .tag.active {
     background: linear-gradient(135deg, #ff6b8a, #ff8eb4);
     color: #fff;
+}
+
+/* ===== OCR 上传区 ===== */
+.ocr-upload-area {
+    border: 2px dashed #ff6b8a;
+    border-radius: 16px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: linear-gradient(135deg, #fff5f7, #ffeef2);
+    margin-bottom: 12px;
+}
+.ocr-upload-area:active { background: #ffe0e8; }
+.ocr-upload-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+}
+.ocr-upload-text {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ff6b8a;
+    margin-bottom: 4px;
+}
+.ocr-upload-hint {
+    font-size: 12px;
+    color: #999;
+}
+.ocr-progress {
+    margin-top: 12px;
+    background: #f0f0f0;
+    border-radius: 8px;
+    height: 28px;
+    position: relative;
+    overflow: hidden;
+}
+.ocr-progress-text {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    z-index: 1;
+}
+.ocr-progress-bar {
+    width: 100%;
+    height: 100%;
+    background: #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.ocr-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff6b8a, #ff8eb4);
+    border-radius: 8px;
+    transition: width 0.3s;
+    width: 0%;
+}
+.ocr-preview-area {
+    margin-top: 12px;
+    text-align: center;
+}
+.ocr-preview-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 8px;
+}
+.ocr-preview-img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: contain;
+    border-radius: 12px;
+    background: #f8f8f8;
+    margin-bottom: 8px;
+}
+.ocr-crop-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+.ocr-crop-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    background: linear-gradient(135deg, #ff6b8a, #ff8eb4);
+    color: #fff;
+}
+.ocr-crop-btn-cancel {
+    background: #f0f0f0;
+    color: #666;
 }
 
 /* ===== 链接识别区域 ===== */
@@ -133,6 +300,7 @@ body {
     cursor: pointer;
     white-space: nowrap;
     transition: opacity 0.2s;
+    font-family: inherit;
 }
 .fetch-btn:active { opacity: 0.7; }
 .fetch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -194,14 +362,6 @@ body {
 }
 .card:active { transform: scale(0.96); }
 .card.received { opacity: 0.55; }
-.card-emoji {
-    height: 110px;
-    background: linear-gradient(135deg, #fef0f4, #fce4ec);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 48px;
-}
 .card-img-wrap {
     width: 100%;
     height: 160px;
@@ -215,6 +375,14 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+.card-emoji {
+    height: 110px;
+    background: linear-gradient(135deg, #fef0f4, #fce4ec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
 }
 .card-info {
     padding: 12px;
@@ -322,6 +490,10 @@ body {
     justify-content: space-between;
     padding: 20px 20px 12px;
     border-bottom: 1px solid #f0e0ec;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 1;
 }
 .modal-head h2 {
     font-size: 18px;
@@ -338,6 +510,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: inherit;
 }
 .modal-body {
     padding: 20px;
@@ -357,6 +530,7 @@ body {
     text-align: center;
     outline: none;
     margin-bottom: 16px;
+    font-family: inherit;
 }
 .input-pwd:focus {
     border-color: #ff6b8a;
@@ -371,6 +545,7 @@ body {
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
+    font-family: inherit;
 }
 .btn-add {
     width: 100%;
@@ -383,6 +558,7 @@ body {
     font-weight: 600;
     cursor: pointer;
     margin-bottom: 16px;
+    font-family: inherit;
 }
 .list {
     display: flex;
@@ -413,6 +589,7 @@ body {
     font-size: 12px;
     cursor: pointer;
     font-weight: 600;
+    font-family: inherit;
 }
 .item-btns button:first-child {
     background: #e8f5e9;
@@ -443,28 +620,7 @@ body {
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
-}
-
-/* ===== Toast ===== */
-.toast {
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%) translateY(100px);
-    background: rgba(0,0,0,0.8);
-    color: #fff;
-    padding: 12px 24px;
-    border-radius: 12px;
-    font-size: 14px;
-    font-weight: 600;
-    z-index: 2000;
-    opacity: 0;
-    transition: all 0.3s;
-    white-space: nowrap;
-}
-.toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    font-family: inherit;
 }
 
 /* ===== 图片预览 ===== */
@@ -498,65 +654,30 @@ body {
     outline: none;
     background: #fff;
     margin-top: 4px;
+    font-family: inherit;
 }
 .input-img-url:focus {
     border-color: #ff6b8a;
 }
 
-/* ===== 二维码扫描区域 ===== */
-#reader {
-    border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-}
-#reader video {
-    border-radius: 12px;
-}
-#reader__scan_region {
-    border-radius: 12px;
-}
-
-/* ===== 详情页图片 ===== */
-.detail-img {
-    width: 100%;
-    max-width: 260px;
-    border-radius: 12px;
-    margin-bottom: 12px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-}
-
-/* ===== 深度链接按钮 ===== */
-.detail-btns {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin-top: 16px;
-}
-.btn-deep-link {
-    padding: 14px 32px;
-    background: linear-gradient(135deg, #ff6b8a, #ff8eb4);
+/* ===== Toast ===== */
+.toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: rgba(0,0,0,0.8);
     color: #fff;
-    text-decoration: none;
-    border-radius: 14px;
-    font-size: 16px;
-    font-weight: 600;
-    display: inline-block;
-    cursor: pointer;
-    border: none;
-    font-family: inherit;
-}
-.btn-browser-link {
-    padding: 14px 32px;
-    background: #f0f0f0;
-    color: #666;
-    text-decoration: none;
-    border-radius: 14px;
+    padding: 12px 24px;
+    border-radius: 12px;
     font-size: 14px;
     font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-    border: none;
-    font-family: inherit;
+    z-index: 2000;
+    opacity: 0;
+    transition: all 0.3s;
+    white-space: nowrap;
+}
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
