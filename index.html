@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的礼物愿望单</title>
+    <link rel="stylesheet" href="style.css">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ff6b8a">
+</head>
+<body>
+    <!-- 顶部 -->
+    <header class="top-bar">
+        <div class="top-inner">
+            <h1>🎁 我的礼物愿望单</h1>
+            <button class="btn-admin" id="btn-admin">管理</button>
+        </div>
+    </header>
+
+    <!-- 统计条 -->
+    <div class="stats-bar">
+        <div class="stat"><span id="stat-total">0</span> 件礼物</div>
+        <div class="stat"><span id="stat-want">0</span> 件想要</div>
+        <div class="stat">¥<span id="stat-price">0</span></div>
+    </div>
+
+    <!-- 筛选标签 -->
+    <div class="tags" id="tags"></div>
+
+    <!-- 礼物列表 -->
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" style="display:none;">
+        <div class="empty-icon">🎁</div>
+        <div>暂无礼物</div>
+        <div class="empty-sub">点右上角「管理」添加</div>
+    </div>
+
+    <!-- 管理弹窗 -->
+    <div class="modal" id="modal-admin">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>管理后台</h2>
+                <button class="modal-close" onclick="closeModal('modal-admin')">✕</button>
+            </div>
+            <div class="modal-body" id="admin-body">
+                <div class="login-box" id="login-box">
+                    <input type="password" id="pwd-input" placeholder="输入管理密码" class="input-pwd">
+                    <button class="btn-primary" onclick="doLogin()">进入</button>
+                </div>
+                <div class="admin-panel" id="admin-panel" style="display:none;">
+                    <button class="btn-add" onclick="openEdit()">＋ 添加礼物</button>
+                    <div class="list" id="admin-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑弹窗 -->
+    <div class="modal" id="modal-edit">
+        <div class="modal-box modal-box-lg">
+            <div class="modal-head">
+                <h2 id="edit-title">添加礼物</h2>
+                <button class="modal-close" onclick="closeModal('modal-edit')">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <input type="hidden" id="edit-id">
+
+                    <!-- 方式一：粘贴链接识别 -->
+                    <div class="fetch-section">
+                        <div class="fetch-title">📱 方式一：粘贴商品链接自动识别</div>
+                        <div class="fetch-desc">从淘宝/京东App复制链接，粘贴到下方，点「识别」自动填入</div>
+                        <div class="fetch-row">
+                            <input type="text" id="fetch-url" placeholder="粘贴商品链接" class="fetch-input">
+                            <button type="button" class="fetch-btn" id="btn-fetch" onclick="fetchFromLink()">识别</button>
+                        </div>
+                        <div class="fetch-result" id="fetch-result"></div>
+                    </div>
+
+                    <!-- 方式二：快速粘贴 -->
+                    <div class="fetch-section" style="margin-top:12px;">
+                        <div class="fetch-title">⚡ 方式二：快速粘贴（推荐）</div>
+                        <div class="fetch-desc">从淘宝/京东App复制商品标题+价格，粘贴到下方，自动识别填入</div>
+                        <textarea id="quick-paste" placeholder="粘贴商品标题和价格，例如：&#10;Apple iPhone 15 Pro Max 256GB 蓝色钛金属&#10;¥9,299.00" class="quick-paste-box"></textarea>
+                        <button type="button" class="fetch-btn" onclick="quickParse()" style="width:100%;margin-top:8px;">一键识别填入</button>
+                    </div>
+                    
+                    <hr class="divider">
+
+                    <div class="field">
+                        <label>礼物名称 *</label>
+                        <input type="text" id="edit-name" placeholder="输入商品名称" required>
+                    </div>
+                    <div class="field">
+                        <label>价格（元） *</label>
+                        <input type="number" id="edit-price" placeholder="0" min="0" required>
+                    </div>
+                    <div class="field">
+                        <label>购买链接</label>
+                        <input type="text" id="edit-link" placeholder="粘贴淘宝/京东链接（选填）">
+                    </div>
+                    <div class="field">
+                        <label>分类</label>
+                        <select id="edit-cat">
+                            <option value="电子产品">📱 电子产品</option>
+                            <option value="书籍">📚 书籍</option>
+                            <option value="配饰">👜 配饰</option>
+                            <option value="家居">🏠 家居</option>
+                            <option value="美妆">💄 美妆</option>
+                            <option value="运动">⚽ 运动</option>
+                            <option value="其他">🎁 其他</option>
+                        </select>
+                    </div>
+                    <div class="btns">
+                        <button type="button" class="btn-cancel" onclick="closeModal('modal-edit')">取消</button>
+                        <button type="submit" class="btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div class="modal" id="modal-detail">
+        <div class="modal-box">
+            <div class="modal-head">
+                <h2>礼物详情</h2>
+                <button class="modal-close" onclick="closeModal('modal-detail')">✕</button>
+            </div>
+            <div class="modal-body" id="detail-body"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
