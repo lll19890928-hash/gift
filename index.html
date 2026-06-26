@@ -87,10 +87,9 @@
                             <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocr-progress-fill"></div></div>
                         </div>
                         <div class="fetch-result" id="ocr-result"></div>
-                        <!-- 截图预览 + 裁剪 -->
+                        <!-- 截图预览 -->
                         <div class="ocr-preview-area" id="ocr-preview-area" style="display:none;">
                             <div class="ocr-preview-label">商品图片预览（可调整）</div>
-                            <canvas id="ocr-canvas" style="display:none;"></canvas>
                             <img id="ocr-preview-img" class="ocr-preview-img" src="" alt="预览">
                             <div class="ocr-crop-btns">
                                 <button type="button" class="ocr-crop-btn" onclick="cropProductImage()">✅ 使用此图</button>
@@ -162,11 +161,11 @@
         </div>
     </div>
 
-    <!-- 详情弹窗 -->
+    <!-- 详情弹窗（保留，但卡片上已有购买按钮） -->
     <div class="modal" id="modal-detail">
         <div class="modal-box">
             <div class="modal-head">
-                <h2>礼物详情</h2>
+                <h2>商品详情</h2>
                 <button class="modal-close" onclick="closeModal('modal-detail')">✕</button>
             </div>
             <div class="modal-body" id="detail-body"></div>

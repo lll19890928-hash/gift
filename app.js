@@ -24,6 +24,10 @@ function bindEvents() {
         e.preventDefault();
         saveGift();
     };
+    // 回车登录
+    document.getElementById("pwd-input").onkeydown = (e) => {
+        if (e.key === "Enter") doLogin();
+    };
 }
 
 // ===== 本地存储 =====
@@ -33,7 +37,11 @@ function loadGifts() {
         if (d) gifts = JSON.parse(d);
     } catch(e) {}
     // 兼容旧数据
-    gifts.forEach(g => { if (!g.image) g.image = ""; });
+    gifts.forEach(g => {
+        if (!g.image) g.image = "";
+        if (!g.cat) g.cat = "其他";
+        if (g.received === undefined) g.received = false;
+    });
     if (!gifts.length) gifts = getDefaultGifts();
 }
 
@@ -43,7 +51,7 @@ function saveGifts() {
 
 function getDefaultGifts() {
     return [
-        {id:1, name:"示例礼物（可删除）", price:199, cat:"其他", link:"", image:"", received:false}
+        {id:1, name:"示例：联想显示器 L24-4C", price:575, cat:"电子产品", link:"https://item.taobao.com/item.htm?id=853869774768", image:"", received:false}
     ];
 }
 
@@ -104,21 +112,32 @@ function renderGrid() {
     grid.style.display = "grid";
     empty.style.display = "none";
 
-    grid.innerHTML = list.map(g => `
-        <div class="card ${g.received?'received':''}" onclick="viewDetail(${g.id})">
-            ${g.received?'<div class="badge">✅ 已收到</div>':''}
-            <div class="card-img-wrap">
+    grid.innerHTML = list.map(g => {
+        const hasLink = g.link && g.link.trim();
+        const buyBtn = hasLink ? `<a href="${esc(g.link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn" onclick="event.stopPropagation()">去购买 🛒</a>` : "";
+        const editBtn = isAdmin ? `<button class="card-edit-btn" onclick="event.stopPropagation();openEdit(${g.id})" title="编辑">✏️</button>` : "";
+        const recvBadge = g.received ? `<div class="badge">✅ 已收到</div>` : "";
+
+        return `
+        <div class="card ${g.received?'received':''}">
+            ${editBtn}
+            ${recvBadge}
+            <div class="card-img-wrap" onclick="${hasLink ? '' : 'viewDetail('+g.id+')'}">
                 ${g.image
                     ? `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" onerror="this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`
                     : `<div class="card-emoji">${getEmoji(g.cat)}</div>`
                 }
             </div>
-            <div class="card-info">
+            <div class="card-body">
                 <div class="card-name">${esc(g.name)}</div>
-                <div class="card-price">¥${g.price.toLocaleString()}</div>
+                <div class="card-bottom">
+                    <div class="card-price">¥${g.price.toLocaleString()}</div>
+                    ${buyBtn}
+                </div>
             </div>
         </div>
-    `).join("");
+    `;
+    }).join("");
 }
 
 function updateStats() {
@@ -136,6 +155,7 @@ function doLogin() {
         document.getElementById("login-box").style.display = "none";
         document.getElementById("admin-panel").style.display = "block";
         renderAdminList();
+        renderGrid(); // 重新渲染以显示编辑按钮
         showToast("管理后台已解锁");
     } else {
         showToast("密码错误");
@@ -208,10 +228,8 @@ function handleOcrUpload(event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         const imgData = e.target.result;
-        // 显示预览
         document.getElementById("ocr-preview-img").src = imgData;
         document.getElementById("ocr-preview-area").style.display = "block";
-        // 开始 OCR
         startOcr(imgData);
     };
     reader.readAsDataURL(file);
@@ -253,7 +271,7 @@ async function startOcr(imageData) {
         // ===== 智能解析淘宝/京东截图 =====
         const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-        // --- 提取所有价格 ---
+        // --- 提取所有价格（并记录在文本中的位置）---
         let allPrices = [];
         const priceRegex = /[¥￥$]\s*([\d,]+\.?\d*)/g;
         let priceMatch;
@@ -264,26 +282,36 @@ async function startOcr(imageData) {
                 index: priceMatch.index
             });
         }
-        // 也匹配纯数字（如 "459" 独立出现）
-        const numInText = text.match(/(?<![¥￥$\w\d.])(\d{2,4})(?=\s*(元|起|\n|$))/g);
-        if (numInText) {
-            numInText.forEach(n => {
-                const v = parseFloat(n);
-                if (v > 10 && v < 100000) allPrices.push({ raw: n, value: v, index: -1 });
-            });
-        }
+        // 也匹配纯数字（如 "459" 独立出现，且在文本后半部分）
+        const lines2 = text.split("\n");
+        const totalLines = lines2.length;
+        lines2.forEach((line, lineIdx) => {
+            const nums = line.match(/\b(\d{3,5})\b/g);
+            if (nums && lineIdx > totalLines * 0.5) { // 只在文本后半部分找价格
+                nums.forEach(n => {
+                    const v = parseFloat(n);
+                    if (v > 10 && v < 100000) {
+                        allPrices.push({ raw: n, value: v, index: -1, lineIdx });
+                    }
+                });
+            }
+        });
 
-        // 智能选择最佳价格：优先非整数（如575.04），其次较大的数
+        // 智能选择最佳价格
         let bestPrice = 0;
         if (allPrices.length > 0) {
-            // 先找带小数的（通常是真实价格）
-            const decimalPrices = allPrices.filter(p => p.value % 1 !== 0);
+            // 优先选文本后半部分的价格（淘宝价格通常在左下角/底部）
+            const lowerPrices = allPrices.filter(p => p.lineIdx === undefined || p.lineIdx > totalLines * 0.4);
+            const pricePool = lowerPrices.length > 0 ? lowerPrices : allPrices;
+
+            // 优先选带小数的（如 575.04）
+            const decimalPrices = pricePool.filter(p => p.value % 1 !== 0);
             if (decimalPrices.length > 0) {
                 bestPrice = Math.round(decimalPrices[0].value);
             } else {
-                // 都取整了，取中间值（排除太小的）
-                const valid = allPrices.filter(p => p.value >= 50).sort((a,b) => b.value - a.value);
-                if (valid.length > 0) bestPrice = Math.round(valid[0].value);
+                // 选最大的（通常价格比折扣数字大）
+                const sorted = pricePool.map(p => p.value).sort((a,b) => b - a);
+                bestPrice = Math.round(sorted[0]);
             }
         }
 
@@ -296,21 +324,20 @@ async function startOcr(imageData) {
                 break;
             }
         }
-        // 优先级2：找较长的中文行（商品全称），跳过纯价格/促销文字
+        // 优先级2：找较长的中文行，跳过促销/补贴文字
         if (!name) {
             for (const line of lines) {
-                // 跳过明显不是名称的行
                 if (/^[\d¥￥$.,\s]+$/.test(line)) continue;
-                if (/补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册/.test(line)) continue;
-                if (/^\d+%$/.test(line)) continue;  // 如 "4%"
-                if (line.length < 4) continue;
+                if (/补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册|登录/.test(line)) continue;
+                if (/^\d+%$/.test(line)) continue;
+                if (line.length < 3) continue;
                 if (line.length <= 50) { name = line; break; }
             }
         }
-        // 优先级3：如果还没找到，取第一行长文本
+        // 优先级3：取第一行有效文本
         if (!name) {
             for (const line of lines) {
-                if (line.length >= 4 && !/^[\d¥￥$.,\s]+$/.test(line)) {
+                if (line.length >= 3 && !/^[\d¥￥$.,\s]+$/.test(line)) {
                     name = line.substring(0, 50);
                     break;
                 }
@@ -324,16 +351,16 @@ async function startOcr(imageData) {
         if (name) document.getElementById("edit-name").value = name;
         if (bestPrice) document.getElementById("edit-price").value = bestPrice;
 
-        // 将截图转为商品图片（压缩后）
+        // 将截图转为商品图片（智能裁剪）
         await setOcrImage(imageData);
 
         resultDiv.className = "fetch-result success";
-        resultDiv.innerHTML = `✅ 识别成功！<br>
-            <b>名称：</b>${esc(name || "未识别")}<br>
-            <b>价格：</b>¥${bestPrice || "未识别"}${allPrices.length > 1 ? '<br><small style="color:#888">识别到 '+allPrices.length+' 个价格，已选最优值</small>' : ''}<br>
-            图片已自动填入（截图本身），请确认后保存。`;
+        resultDiv.innerHTML = `✅ 识别完成！请确认下方信息是否正确：<br>
+            <b>名称：</b>${esc(name || "（未识别，请手动填写）")}<br>
+            <b>价格：</b>¥${bestPrice || "（未识别，请手动填写）"}<br>
+            <small style="color:#888;">💡 图片已自动裁剪为商品主图，可在左侧调整。确认无误后点「保存」。</small>`;
         resultDiv.style.display = "block";
-        showToast("识别成功！");
+        showToast("识别完成，请确认信息！");
 
     } catch(err) {
         console.error("OCR失败：", err);
@@ -353,29 +380,24 @@ async function setOcrImage(imageData) {
             let w = img.width;
             let h = img.height;
 
-            // 智能裁剪：对于竖向淘宝截图，尝试截取中间的商品图区域
-            // 典型淘宝截图布局：顶部品牌区 → 中间商品大图 → 底部价格/信息
-            if (h > w * 1.3 && h > 400) {
-                // 竖向截图：取中间 60% 高度区域（通常是商品主图）
-                const cropTop = Math.round(h * 0.18);
-                const cropH = Math.round(h * 0.55);
-                canvas.width = w;
+            // 智能裁剪：竖向淘宝截图，取中间商品主图区域
+            if (h > w * 1.2) {
+                const cropTop = Math.round(h * 0.15);
+                const cropH = Math.round(h * 0.6);
+                const cropW = w;
+                canvas.width = cropW;
                 canvas.height = cropH;
-
                 const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
+                ctx.drawImage(img, 0, cropTop, cropW, cropH, 0, 0, cropW, cropH);
             } else {
-                // 横向或小图：压缩到最大宽度 500px
                 let maxW = 500;
                 if (w > maxW) { h = h * maxW / w; w = maxW; }
                 canvas.width = w;
                 canvas.height = h;
-
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, w, h);
             }
 
-            // 转为 JPEG data URL（质量 0.75）
             const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
             document.getElementById("edit-image").value = dataUrl;
             document.getElementById("edit-image-url").value = dataUrl;
@@ -418,10 +440,9 @@ function quickParse() {
     if (linkMatch) {
         document.getElementById("edit-link").value = linkMatch[1];
         document.getElementById("fetch-url").value = linkMatch[1];
-        setTimeout(() => fetchFromLink(), 500);
     }
 
-    showToast("✅ 已自动填入，正在获取图片...");
+    showToast("✅ 已自动填入，请确认后保存");
 }
 
 // ===== 链接识别 =====
@@ -491,70 +512,6 @@ async function fetchFromLink() {
             resultDiv.style.display = "block";
             showToast("识别成功！");
         } else {
-            await fetchByCorsProxy(url);
-        }
-    } catch(err) {
-        btn.disabled = false;
-        btn.textContent = "识别";
-        await fetchByCorsProxy(url);
-    }
-}
-
-async function fetchByCorsProxy(url) {
-    const btn = document.getElementById("btn-fetch");
-    const resultDiv = document.getElementById("fetch-result");
-
-    try {
-        showToast("正在通过代理抓取...");
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-        const html = await res.text();
-
-        let name = "";
-        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch) name = titleMatch[1].trim();
-
-        let price = 0;
-        const pricePatterns = [
-            /"price"[:\s]+"?(\d+\.?\d*)/i,
-            /¥\s*(\d+)/,
-            /￥\s*(\d+)/,
-            /"viewPrice"\s*:\s*"([\d.]+)"/
-        ];
-        for (const pattern of pricePatterns) {
-            const m = html.match(pattern);
-            if (m) { price = parseInt(m[1]); break; }
-        }
-
-        let image = "";
-        const imgPatterns = [
-            /"img"\s*:\s*"([^"]+)"/,
-            /"pic_url"\s*:\s*"([^"]+)"/,
-            /<meta\s+property="og:image"\s+content="([^"]+)"/i
-        ];
-        for (const pattern of imgPatterns) {
-            const m = html.match(pattern);
-            if (m) { image = m[1]; break; }
-        }
-
-        btn.disabled = false;
-        btn.textContent = "识别";
-
-        if (name || price) {
-            if (name) document.getElementById("edit-name").value = name.substring(0, 80);
-            if (price) document.getElementById("edit-price").value = price;
-            if (image) {
-                document.getElementById("edit-image").value = image;
-                document.getElementById("edit-image-url").value = image;
-                document.getElementById("image-preview").innerHTML = `<img src="${esc(image)}" class="preview-img" onerror="this.parentElement.innerHTML='<div class=\\'image-placeholder\\'>图片加载失败</div>'">`;
-            }
-            document.getElementById("edit-link").value = url;
-
-            resultDiv.className = "fetch-result success";
-            resultDiv.innerHTML = `✅ 抓取成功！已自动填入信息，请确认后保存。`;
-            resultDiv.style.display = "block";
-            showToast("抓取成功！");
-        } else {
             showManualInput(resultDiv, url);
         }
     } catch(err) {
@@ -574,7 +531,7 @@ function showManualInput(resultDiv, url) {
         2. 复制商品价格 → 粘贴到「价格」<br>
         3. 复制商品图片地址 → 粘贴到「图片网址」<br>
         4. 商品链接已自动保留在下方<br><br>
-        <button onclick="keepLinkOnly()" style="padding:8px 16px;background:#ff6b8a;color:#fff;border:none;border-radius:8px;cursor:pointer;">保留链接并手动填写</button>
+        <button type="button" onclick="keepLinkOnly()" style="padding:8px 16px;background:#ff6b8a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;">保留链接并手动填写</button>
     `;
     resultDiv.style.display = "block";
     showToast("请手动填写");
@@ -654,7 +611,7 @@ function toggleRecv(id) {
     showToast(g.received ? "已标记收到 ✓" : "已标记想要");
 }
 
-// ===== 查看详情（支持深度链接跳转App）=====
+// ===== 查看详情 =====
 function viewDetail(id) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
@@ -679,32 +636,11 @@ function viewDetail(id) {
     `;
 
     if (g.link) {
-        const isTaobao = /taobao\.com|tmall\.com/.test(g.link);
-        const isJD = /jd\.com|jingdong\.com/.test(g.link);
-
-        let deepLink = g.link;
-        let deepLinkText = "🛒 去购买";
-
-        if (isTaobao) {
-            const itemMatch = g.link.match(/id=(\d+)/);
-            if (itemMatch) {
-                deepLink = `taobao://item.taobao.com/item.htm?id=${itemMatch[1]}`;
-                deepLinkText = "🛒 在淘宝App中打开";
-            }
-        } else if (isJD) {
-            const skuMatch = g.link.match(/\/(\d+)\.html/);
-            if (skuMatch) {
-                deepLink = `openapp.jdmobile://virtual?params={"category":"jump","des":"productDetail","skuId":"${skuMatch[1]}"}`;
-                deepLinkText = "🛒 在京东App中打开";
-            }
-        }
-
         html += `
             <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
-                <a href="javascript:void(0)" onclick="openAppLink('${esc(g.link)}','${esc(deepLink)}')" style="padding:14px 32px;background:linear-gradient(135deg,#ff6b8a,#ff8eb4);color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600;display:inline-block;cursor:pointer;border:none;font-family:inherit;">${deepLinkText}</a>
-                <a href="${esc(g.link)}" target="_blank" style="padding:14px 32px;background:#f0f0f0;color:#666;text-decoration:none;border-radius:14px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;cursor:pointer;font-family:inherit;">浏览器打开</a>
+                <a href="${esc(g.link)}" target="_blank" rel="noopener noreferrer" style="padding:14px 32px;background:linear-gradient(135deg,#ff6b8a,#ff8eb4);color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600;display:inline-block;font-family:inherit;">🛒 去购买</a>
             </div>
-            <div style="color:#999;font-size:12px;margin-top:8px;">如未安装App，将自动在浏览器中打开</div>
+            <div style="color:#999;font-size:12px;margin-top:8px;">点击将在浏览器中打开商品页面</div>
         `;
     } else {
         html += `<div style="color:#999;font-size:13px;margin-top:16px;">暂无购买链接</div>`;
@@ -713,30 +649,6 @@ function viewDetail(id) {
     html += `</div>`;
     document.getElementById("detail-body").innerHTML = html;
     openModal("modal-detail");
-}
-
-// ===== 深度链接跳转 =====
-function openAppLink(webUrl, deepLink) {
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = deepLink;
-    document.body.appendChild(iframe);
-
-    const timer = setTimeout(() => {
-        window.location.href = webUrl;
-    }, 1500);
-
-    document.addEventListener("visibilitychange", () => {
-        if (document.hidden) clearTimeout(timer);
-    });
-
-    setTimeout(() => {
-        if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe);
-        }
-    }, 2000);
-
-    showToast("正在打开App...");
 }
 
 // ===== 工具函数 =====

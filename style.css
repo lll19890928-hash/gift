@@ -356,52 +356,38 @@ body {
     border-radius: 18px;
     overflow: hidden;
     box-shadow: 0 2px 12px rgba(255,107,138,0.1);
-    cursor: pointer;
     transition: transform 0.15s;
     position: relative;
 }
 .card:active { transform: scale(0.96); }
 .card.received { opacity: 0.55; }
-.card-img-wrap {
-    width: 100%;
-    height: 160px;
-    overflow: hidden;
+.card.received .card-buy-btn { display: none; }
+
+/* 编辑按钮（管理员可见） */
+.card-edit-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.9);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f8f8f8;
+    transition: all 0.2s;
 }
-.card-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+.card-edit-btn:active {
+    transform: scale(0.9);
+    background: #fff;
 }
-.card-emoji {
-    height: 110px;
-    background: linear-gradient(135deg, #fef0f4, #fce4ec);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 48px;
-}
-.card-info {
-    padding: 12px;
-}
-.card-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #1a1a2e;
-    margin-bottom: 6px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-.card-price {
-    font-size: 18px;
-    font-weight: 800;
-    color: #ff3b30;
-}
+
+/* 已收到角标 */
 .badge {
     position: absolute;
     top: 8px;
@@ -412,6 +398,80 @@ body {
     border-radius: 12px;
     font-size: 12px;
     font-weight: 600;
+    z-index: 10;
+}
+
+/* 卡片图片 */
+.card-img-wrap {
+    width: 100%;
+    height: 160px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8f8f8;
+    cursor: pointer;
+}
+.card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.card-emoji {
+    height: 160px;
+    background: linear-gradient(135deg, #fef0f4, #fce4ec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+}
+
+/* 卡片内容区 */
+.card-body {
+    padding: 12px;
+}
+.card-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+    min-height: 40px;
+}
+.card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.card-price {
+    font-size: 18px;
+    font-weight: 800;
+    color: #ff3b30;
+    white-space: nowrap;
+}
+
+/* 购买按钮（直接在卡片上） */
+.card-buy-btn {
+    display: inline-block;
+    padding: 8px 14px;
+    background: linear-gradient(135deg, #ff6b8a, #ff8eb4);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.card-buy-btn:active {
+    opacity: 0.8;
+    transform: scale(0.95);
 }
 
 /* ===== 空状态 ===== */
