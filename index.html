@@ -11,28 +11,24 @@
     <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
-    <!-- 顶部 -->
     <header class="top-bar">
         <div class="top-inner">
             <h1>🎁 我的礼物愿望单</h1>
-            <button class="btn-admin" id="btn-admin">管理</button>
+            <div class="top-btns">
+                <button class="btn-admin" id="btn-admin">管理</button>
+            </div>
         </div>
     </header>
 
-    <!-- 统计条 -->
     <div class="stats-bar">
         <div class="stat"><span id="stat-total">0</span> 件礼物</div>
         <div class="stat"><span id="stat-want">0</span> 件想要</div>
         <div class="stat">¥<span id="stat-price">0</span></div>
     </div>
 
-    <!-- 分类图标区 -->
     <div class="cat-grid" id="cat-grid"></div>
-
-    <!-- 筛选标签 -->
     <div class="tags" id="tags"></div>
 
-    <!-- 礼物列表 -->
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" style="display:none;">
         <div class="empty-icon">🎁</div>
@@ -53,14 +49,15 @@
                     <button class="btn-primary" onclick="doLogin()">进入</button>
                 </div>
                 <div class="admin-panel" id="admin-panel" style="display:none;">
-                    <button class="btn-add" onclick="openEdit()">＋ 添加礼物</button>
-                    <div class="list" id="admin-list"></div>
+                    <button class="btn-add" onclick="closeModal('modal-admin');openEdit()">＋ 添加新礼物</button>
+                    <p style="color:#888;font-size:13px;text-align:center;margin-bottom:12px;">添加后可在首页直接编辑</p>
+                    <button class="btn-exit-admin" onclick="exitAdmin()">退出管理模式</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 添加/编辑弹窗 -->
+    <!-- 添加礼物弹窗 -->
     <div class="modal" id="modal-edit">
         <div class="modal-box modal-box-lg">
             <div class="modal-head">
@@ -72,14 +69,13 @@
                     <input type="hidden" id="edit-id">
                     <input type="hidden" id="edit-image">
 
-                    <!-- 方式一：截图OCR识别 -->
                     <div class="fetch-section">
-                        <div class="fetch-title">📷 方式一：上传截图自动识别（推荐）</div>
-                        <div class="fetch-desc">直接截取淘宝/京东商品页面，上传后自动识别名称+价格，并裁剪商品图片</div>
-                        <div class="ocr-upload-area" id="ocr-upload-area" onclick="document.getElementById('ocr-file-input').click()">
+                        <div class="fetch-title">📷 上传截图自动识别（推荐）</div>
+                        <div class="fetch-desc">截取淘宝/京东商品页面，上传后自动识别名称+价格并裁剪图片</div>
+                        <div class="ocr-upload-area" onclick="document.getElementById('ocr-file-input').click()">
                             <div class="ocr-upload-icon">📷</div>
-                            <div class="ocr-upload-text">点击或拖拽上传商品截图</div>
-                            <div class="ocr-upload-hint">支持淘宝/京东/拼多多商品截图 · 首次使用需加载识别引擎(约2~5MB)</div>
+                            <div class="ocr-upload-text">点击上传商品截图</div>
+                            <div class="ocr-upload-hint">首次使用需加载识别引擎(约2~5MB)</div>
                         </div>
                         <input type="file" id="ocr-file-input" accept="image/*" style="display:none;" onchange="handleOcrUpload(event)">
                         <div class="ocr-progress" id="ocr-progress" style="display:none;">
@@ -87,21 +83,18 @@
                             <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocr-progress-fill"></div></div>
                         </div>
                         <div class="fetch-result" id="ocr-result"></div>
-                        <!-- 截图预览 -->
                         <div class="ocr-preview-area" id="ocr-preview-area" style="display:none;">
-                            <div class="ocr-preview-label">商品图片预览（可调整）</div>
+                            <div class="ocr-preview-label">商品图片预览</div>
                             <img id="ocr-preview-img" class="ocr-preview-img" src="" alt="预览">
                             <div class="ocr-crop-btns">
-                                <button type="button" class="ocr-crop-btn" onclick="cropProductImage()">✅ 使用此图</button>
+                                <button type="button" class="ocr-crop-btn" onclick="cancelCrop()">✅ 使用此图</button>
                                 <button type="button" class="ocr-crop-btn ocr-crop-btn-cancel" onclick="cancelCrop()">重新上传</button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 方式二：粘贴链接识别 -->
                     <div class="fetch-section" style="margin-top:12px;">
-                        <div class="fetch-title">🔗 方式二：粘贴商品链接自动识别</div>
-                        <div class="fetch-desc">从淘宝/京东App复制链接，粘贴到下方，点「识别」自动填入图片、名称、价格</div>
+                        <div class="fetch-title">🔗 粘贴商品链接识别</div>
                         <div class="fetch-row">
                             <input type="text" id="fetch-url" placeholder="粘贴商品链接" class="fetch-input">
                             <button type="button" class="fetch-btn" id="btn-fetch" onclick="fetchFromLink()">识别</button>
@@ -109,17 +102,14 @@
                         <div class="fetch-result" id="fetch-result"></div>
                     </div>
 
-                    <!-- 方式三：快速粘贴 -->
                     <div class="fetch-section" style="margin-top:12px;">
-                        <div class="fetch-title">⚡ 方式三：快速粘贴</div>
-                        <div class="fetch-desc">从淘宝/京东App复制商品标题+价格，粘贴到下方，自动识别填入</div>
-                        <textarea id="quick-paste" placeholder="粘贴商品标题和价格，例如：&#10;Apple iPhone 15 Pro Max 256GB 蓝色钛金属&#10;¥9,299.00" class="quick-paste-box"></textarea>
+                        <div class="fetch-title">⚡ 快速粘贴</div>
+                        <textarea id="quick-paste" placeholder="粘贴商品标题和价格，例如：&#10;Apple iPhone 15 Pro Max&#10;¥9,299.00" class="quick-paste-box"></textarea>
                         <button type="button" class="fetch-btn" onclick="quickParse()" style="width:100%;margin-top:8px;">一键识别填入</button>
                     </div>
-                    
+
                     <hr class="divider">
 
-                    <!-- 图片预览 -->
                     <div class="field">
                         <label>商品图片</label>
                         <div id="image-preview" class="image-preview">
@@ -143,11 +133,13 @@
                     <div class="field">
                         <label>分类</label>
                         <select id="edit-cat">
+                            <option value="护肤">✨ 护肤</option>
+                            <option value="数码">👓 数码</option>
+                            <option value="家电">🏠 家电</option>
+                            <option value="日用">📦 日用</option>
+                            <option value="鞋包">👢 鞋包</option>
                             <option value="电子产品">📱 电子产品</option>
                             <option value="书籍">📚 书籍</option>
-                            <option value="配饰">👜 配饰</option>
-                            <option value="家居">🏠 家居</option>
-                            <option value="美妆">💄 美妆</option>
                             <option value="运动">⚽ 运动</option>
                             <option value="其他">🎁 其他</option>
                         </select>
@@ -161,19 +153,7 @@
         </div>
     </div>
 
-    <!-- 详情弹窗（保留，但卡片上已有购买按钮） -->
-    <div class="modal" id="modal-detail">
-        <div class="modal-box">
-            <div class="modal-head">
-                <h2>商品详情</h2>
-                <button class="modal-close" onclick="closeModal('modal-detail')">✕</button>
-            </div>
-            <div class="modal-body" id="detail-body"></div>
-        </div>
-    </div>
-
     <div class="toast" id="toast"></div>
-
     <script src="app.js"></script>
 </body>
 </html>
