@@ -14,19 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderTags();
     renderGrid();
     updateStats();
-    bindEvents();
 });
-
-function bindEvents() {
-    document.getElementById("btn-admin").onclick = () => openModal("modal-admin");
-    document.getElementById("edit-form").onsubmit = (e) => {
-        e.preventDefault();
-        saveGift();
-    };
-    document.getElementById("pwd-input").onkeydown = (e) => {
-        if (e.key === "Enter") doLogin();
-    };
-}
 
 // ===== 本地存储 =====
 function loadGifts() {
@@ -39,7 +27,7 @@ function loadGifts() {
         if (!g.cat) g.cat = "其他";
         if (g.received === undefined) g.received = false;
     });
-    if (!gifts.length) gifts = getDefaultGifts();
+    if (!gifts.length) { gifts = getDefaultGifts(); saveGifts(); }
 }
 
 function saveGifts() {
@@ -58,6 +46,88 @@ function getDefaultGifts() {
         {id:8, name:"韩国VT固态PDRN水光补水保湿棒 润9.5g可上飞机", price:139, cat:"护肤", link:"", image:"images/pdrn-stick.png", received:false},
         {id:9, name:"韩国anua PDRN透明质酸水光面膜 鱼腥草面膜补水保湿", price:40, cat:"护肤", link:"", image:"images/anua-mask.png", received:false},
     ];
+}
+
+// ===== 管理模式 =====
+function toggleAdmin() {
+    if (isAdmin) {
+        exitAdmin();
+        return;
+    }
+    const bar = document.getElementById("admin-login-bar");
+    if (bar.style.display === "none") {
+        bar.style.display = "flex";
+        document.getElementById("pwd-input").focus();
+    } else {
+        bar.style.display = "none";
+    }
+}
+
+function doLogin() {
+    const pwd = document.getElementById("pwd-input").value;
+    if (pwd === ADMIN_PWD) {
+        isAdmin = true;
+        document.getElementById("admin-login-bar").style.display = "none";
+        document.getElementById("admin-toolbar").style.display = "flex";
+        document.getElementById("btn-admin").textContent = "退出管理";
+        document.getElementById("btn-admin").classList.add("active");
+        renderGrid();
+        showToast("管理模式已开启，可直接编辑");
+    } else {
+        showToast("密码错误");
+        document.getElementById("pwd-input").value = "";
+    }
+}
+
+function exitAdmin() {
+    isAdmin = false;
+    document.getElementById("admin-toolbar").style.display = "none";
+    document.getElementById("add-form-wrap").style.display = "none";
+    document.getElementById("btn-admin").textContent = "管理";
+    document.getElementById("btn-admin").classList.remove("active");
+    document.getElementById("pwd-input").value = "";
+    renderGrid();
+    showToast("已退出管理模式");
+}
+
+// ===== 添加新礼物表单 =====
+function toggleAddForm() {
+    const wrap = document.getElementById("add-form-wrap");
+    if (wrap.style.display === "none") {
+        // 重置表单
+        document.getElementById("edit-name").value = "";
+        document.getElementById("edit-price").value = "";
+        document.getElementById("edit-link").value = "";
+        document.getElementById("edit-cat").value = "护肤";
+        document.getElementById("edit-image").value = "";
+        document.getElementById("edit-image-url").value = "";
+        document.getElementById("quick-paste").value = "";
+        document.getElementById("ocr-progress").style.display = "none";
+        document.getElementById("ocr-result").style.display = "none";
+        document.getElementById("image-preview").innerHTML = '<div class="image-placeholder">📷 点击上传图片</div>';
+        wrap.style.display = "block";
+        wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+        wrap.style.display = "none";
+    }
+}
+
+function saveNewGift() {
+    const name = document.getElementById("edit-name").value.trim();
+    const price = parseInt(document.getElementById("edit-price").value) || 0;
+    const link = document.getElementById("edit-link").value.trim();
+    const cat = document.getElementById("edit-cat").value;
+    const image = document.getElementById("edit-image").value.trim();
+
+    if (!name || !price) { showToast("请填写名称和价格"); return; }
+
+    gifts.push({ id: Date.now(), name, price, link, image, cat, received: false });
+    saveGifts();
+    renderCatGrid();
+    renderGrid();
+    updateStats();
+    document.getElementById("add-form-wrap").style.display = "none";
+    showToast("添加成功！");
 }
 
 // ===== 分类图标区 =====
@@ -122,15 +192,11 @@ function renderGrid() {
     empty.style.display = "none";
 
     grid.innerHTML = list.map(g => {
-        if (isAdmin) {
-            return renderEditableCard(g);
-        } else {
-            return renderViewCard(g);
-        }
+        return isAdmin ? renderEditableCard(g) : renderViewCard(g);
     }).join("");
 }
 
-// ===== 普通浏览模式卡片 =====
+// ===== 普通浏览卡片 =====
 function renderViewCard(g) {
     const hasLink = g.link && g.link.trim();
     const buyBtn = hasLink
@@ -157,7 +223,7 @@ function renderViewCard(g) {
     </div>`;
 }
 
-// ===== 管理员模式卡片（可直接编辑） =====
+// ===== 管理员模式卡片（直接编辑） =====
 function renderEditableCard(g) {
     const imgHtml = g.image
         ? `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" onerror="this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`
@@ -211,16 +277,14 @@ function renderEditableCard(g) {
 function inlineUpdate(id, field, value) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
-    if (g[field] === value) return; // 没变就不保存
+    if (g[field] === value) return;
     g[field] = value;
     saveGifts();
-    // 显示保存提示
     const savedEl = document.getElementById("saved-" + id);
     if (savedEl) {
         savedEl.style.opacity = "1";
         setTimeout(() => { if (savedEl) savedEl.style.opacity = "0"; }, 1500);
     }
-    // 如果是分类变了，更新分类计数
     if (field === "cat" || field === "price") {
         renderCatGrid();
         updateStats();
@@ -243,7 +307,6 @@ function inlineChangeImage(id, event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         const imgData = e.target.result;
-        // 压缩图片
         const img = new Image();
         img.onload = function() {
             const canvas = document.createElement("canvas");
@@ -272,52 +335,48 @@ function updateStats() {
     document.getElementById("stat-price").textContent = total.toLocaleString();
 }
 
-// ===== 管理登录 =====
-function doLogin() {
-    const pwd = document.getElementById("pwd-input").value;
-    if (pwd === ADMIN_PWD) {
-        isAdmin = true;
-        document.getElementById("login-box").style.display = "none";
-        document.getElementById("admin-panel").style.display = "block";
-        renderGrid();
-        showToast("管理模式已开启，可直接编辑卡片");
-    } else {
-        showToast("密码错误");
-    }
-}
-
-function exitAdmin() {
-    isAdmin = false;
-    closeModal("modal-admin");
+function deleteGift(id) {
+    if (!confirm("确定删除这个礼物？")) return;
+    gifts = gifts.filter(g => g.id !== id);
+    saveGifts();
+    renderCatGrid();
     renderGrid();
-    showToast("已退出管理模式");
+    updateStats();
+    showToast("已删除");
 }
 
-// ===== 添加新礼物弹窗 =====
-function openEdit(id = null) {
-    document.getElementById("edit-form").reset();
-    document.getElementById("edit-id").value = "";
-    document.getElementById("edit-image").value = "";
-    document.getElementById("fetch-result").style.display = "none";
-    document.getElementById("fetch-url").value = "";
-    document.getElementById("quick-paste").value = "";
-    document.getElementById("edit-image-url").value = "";
-    document.getElementById("ocr-result").style.display = "none";
-    document.getElementById("ocr-progress").style.display = "none";
-    document.getElementById("ocr-preview-area").style.display = "none";
-    document.getElementById("image-preview").innerHTML = '<div class="image-placeholder">暂无图片</div>';
-
-    document.getElementById("edit-title").textContent = "添加礼物";
-    openModal("modal-edit");
+// ===== 新礼物图片上传 =====
+function handleNewImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const imgData = e.target.result;
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement("canvas");
+            let w = img.width, h = img.height;
+            if (w > 600) { h = h * 600 / w; w = 600; }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+            document.getElementById("edit-image").value = dataUrl;
+            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
+        };
+        img.src = imgData;
+    };
+    reader.readAsDataURL(file);
 }
 
-// ===== 图片预览 =====
 function setImageFromUrl(url) {
     document.getElementById("edit-image").value = url;
-    if (url) {
+    if (url && !url.startsWith("data:")) {
         document.getElementById("image-preview").innerHTML = `<img src="${esc(url)}" class="preview-img" onerror="this.parentElement.innerHTML='<div class=\\'image-placeholder\\'>图片加载失败</div>'">`;
+    } else if (url) {
+        document.getElementById("image-preview").innerHTML = `<img src="${esc(url)}" class="preview-img">`;
     } else {
-        document.getElementById("image-preview").innerHTML = '<div class="image-placeholder">暂无图片</div>';
+        document.getElementById("image-preview").innerHTML = '<div class="image-placeholder">📷 点击上传图片</div>';
     }
 }
 
@@ -327,10 +386,7 @@ function handleOcrUpload(event) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
-        const imgData = e.target.result;
-        document.getElementById("ocr-preview-img").src = imgData;
-        document.getElementById("ocr-preview-area").style.display = "block";
-        startOcr(imgData);
+        startOcr(e.target.result);
     };
     reader.readAsDataURL(file);
 }
@@ -369,6 +425,7 @@ async function startOcr(imageData) {
 
         const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
+        // 价格提取
         let allPrices = [];
         const priceRegex = /[¥￥$]\s*([\d,]+\.?\d*)/g;
         let priceMatch;
@@ -402,6 +459,7 @@ async function startOcr(imageData) {
             }
         }
 
+        // 名称提取
         let name = "";
         for (const line of lines) {
             if (/^[A-Za-z][A-Za-z0-9\s\-\/\.]{2,40}$/.test(line) && /\d/.test(line)) { name = line.trim(); break; }
@@ -429,7 +487,7 @@ async function startOcr(imageData) {
         await setOcrImage(imageData);
 
         resultDiv.className = "fetch-result success";
-        resultDiv.innerHTML = `✅ 识别完成！请确认信息：<br><b>名称：</b>${esc(name || "（未识别）")}<br><b>价格：</b>¥${bestPrice || "（未识别）"}<br><small>图片已自动填入，确认后保存。</small>`;
+        resultDiv.innerHTML = `✅ 识别完成！<br><b>名称：</b>${esc(name || "（未识别）")}<br><b>价格：</b>¥${bestPrice || "（未识别）"}<br><small>图片已自动填入，确认后点保存。</small>`;
         resultDiv.style.display = "block";
         showToast("识别完成，请确认信息！");
     } catch(err) {
@@ -461,17 +519,11 @@ async function setOcrImage(imageData) {
             }
             const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
             document.getElementById("edit-image").value = dataUrl;
-            document.getElementById("edit-image-url").value = dataUrl;
             document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
             resolve();
         };
         img.src = imageData;
     });
-}
-
-function cancelCrop() {
-    document.getElementById("ocr-preview-area").style.display = "none";
-    document.getElementById("ocr-result").style.display = "none";
 }
 
 // ===== 快速粘贴 =====
@@ -491,107 +543,9 @@ function quickParse() {
     if (price) document.getElementById("edit-price").value = price;
 
     const linkMatch = text.match(/(https?:\/\/[^\s]+)/);
-    if (linkMatch) {
-        document.getElementById("edit-link").value = linkMatch[1];
-        document.getElementById("fetch-url").value = linkMatch[1];
-    }
+    if (linkMatch) document.getElementById("edit-link").value = linkMatch[1];
+
     showToast("✅ 已自动填入，请确认后保存");
-}
-
-// ===== 链接识别 =====
-async function fetchFromLink() {
-    const url = document.getElementById("fetch-url").value.trim();
-    if (!url) { showToast("请先粘贴商品链接"); return; }
-
-    const btn = document.getElementById("btn-fetch");
-    const resultDiv = document.getElementById("fetch-result");
-    btn.disabled = true;
-    btn.textContent = "识别中...";
-    resultDiv.style.display = "none";
-
-    try {
-        showToast("正在识别...");
-        let data = null;
-        let apiSuccess = false;
-
-        try {
-            const res = await fetch(`https://api.oioweb.cn/api/common/TbPc?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(8000) });
-            const json = await res.json();
-            if (json && json.result) { data = json.result; apiSuccess = true; }
-        } catch(e) {}
-
-        if (!apiSuccess) {
-            try {
-                const res2 = await fetch(`https://api.vvhan.com/api/TbPc?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(8000) });
-                const json2 = await res2.json();
-                if (json2 && (json2.title || json2.name)) { data = json2; apiSuccess = true; }
-            } catch(e) {}
-        }
-
-        btn.disabled = false;
-        btn.textContent = "识别";
-
-        if (apiSuccess && data) {
-            const name = data.title || data.name || "";
-            const price = data.price ? parseInt(String(data.price).replace(/[^\d]/g, "")) : 0;
-            const image = data.img || data.image || data.pic || "";
-            if (name) document.getElementById("edit-name").value = name;
-            if (price) document.getElementById("edit-price").value = price;
-            if (image) {
-                document.getElementById("edit-image").value = image;
-                document.getElementById("edit-image-url").value = image;
-                document.getElementById("image-preview").innerHTML = `<img src="${esc(image)}" class="preview-img" onerror="this.parentElement.innerHTML='<div class=\\'image-placeholder\\'>图片加载失败</div>'">`;
-            }
-            document.getElementById("edit-link").value = url;
-            resultDiv.className = "fetch-result success";
-            resultDiv.innerHTML = `✅ 识别成功！已自动填入，请确认后保存。`;
-            resultDiv.style.display = "block";
-            showToast("识别成功！");
-        } else {
-            showManualInput(resultDiv, url);
-        }
-    } catch(err) {
-        btn.disabled = false;
-        btn.textContent = "识别";
-        showManualInput(resultDiv, url);
-    }
-}
-
-function showManualInput(resultDiv, url) {
-    resultDiv.className = "fetch-result error";
-    resultDiv.innerHTML = `❌ 自动识别失败<br><small>淘宝/京东有反爬虫保护。请手动填写名称、价格，链接已保留。</small>`;
-    resultDiv.style.display = "block";
-    document.getElementById("edit-link").value = url;
-    showToast("请手动填写");
-}
-
-// ===== 保存新礼物 =====
-function saveGift() {
-    const name = document.getElementById("edit-name").value.trim();
-    const price = parseInt(document.getElementById("edit-price").value) || 0;
-    const link = document.getElementById("edit-link").value.trim();
-    const cat = document.getElementById("edit-cat").value;
-    const image = document.getElementById("edit-image").value.trim();
-
-    if (!name || !price) { showToast("请填写名称和价格"); return; }
-
-    gifts.push({ id: Date.now(), name, price, link, image, cat, received: false });
-    saveGifts();
-    renderCatGrid();
-    renderGrid();
-    updateStats();
-    closeModal("modal-edit");
-    showToast("添加成功！");
-}
-
-function deleteGift(id) {
-    if (!confirm("确定删除这个礼物？")) return;
-    gifts = gifts.filter(g => g.id !== id);
-    saveGifts();
-    renderCatGrid();
-    renderGrid();
-    updateStats();
-    showToast("已删除");
 }
 
 // ===== 工具函数 =====
@@ -610,15 +564,4 @@ function showToast(msg) {
     t.classList.add("show");
     clearTimeout(t._t);
     t._t = setTimeout(() => t.classList.remove("show"), 2200);
-}
-
-function openModal(id) {
-    document.getElementById(id).classList.add("open");
-    document.body.style.overflow = "hidden";
-}
-
-function closeModal(id) {
-    document.getElementById(id).classList.remove("open");
-    const any = document.querySelectorAll(".modal.open").length;
-    if (!any) document.body.style.overflow = "";
 }
