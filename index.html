@@ -75,11 +75,11 @@
                     <!-- 方式一：截图OCR识别 -->
                     <div class="fetch-section">
                         <div class="fetch-title">📷 方式一：上传截图自动识别（推荐）</div>
-                        <div class="fetch-desc">上传淘宝/京东商品截图，自动识别商品名称、价格并提取图片</div>
+                        <div class="fetch-desc">直接截取淘宝/京东商品页面，上传后自动识别名称+价格，并裁剪商品图片</div>
                         <div class="ocr-upload-area" id="ocr-upload-area" onclick="document.getElementById('ocr-file-input').click()">
                             <div class="ocr-upload-icon">📷</div>
-                            <div class="ocr-upload-text">点击上传商品截图</div>
-                            <div class="ocr-upload-hint">支持 PNG、JPG 格式</div>
+                            <div class="ocr-upload-text">点击或拖拽上传商品截图</div>
+                            <div class="ocr-upload-hint">支持淘宝/京东/拼多多商品截图 · 首次使用需加载识别引擎(约2~5MB)</div>
                         </div>
                         <input type="file" id="ocr-file-input" accept="image/*" style="display:none;" onchange="handleOcrUpload(event)">
                         <div class="ocr-progress" id="ocr-progress" style="display:none;">

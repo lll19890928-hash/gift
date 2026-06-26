@@ -250,28 +250,71 @@ async function startOcr(imageData) {
         const text = result.data.text;
         console.log("OCR识别结果：", text);
 
-        // 解析商品名称（取第一行非空文本，去除价格信息）
-        let name = "";
+        // ===== 智能解析淘宝/京东截图 =====
         const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-        for (const line of lines) {
-            // 跳过纯价格行、跳过太短的行
-            if (/^[\d¥￥$.,\s]+$/.test(line)) continue;
-            if (line.length < 2) continue;
-            name = line.substring(0, 50);
-            break;
+
+        // --- 提取所有价格 ---
+        let allPrices = [];
+        const priceRegex = /[¥￥$]\s*([\d,]+\.?\d*)/g;
+        let priceMatch;
+        while ((priceMatch = priceRegex.exec(text)) !== null) {
+            allPrices.push({
+                raw: priceMatch[0],
+                value: parseFloat(priceMatch[1].replace(/,/g, "")),
+                index: priceMatch.index
+            });
+        }
+        // 也匹配纯数字（如 "459" 独立出现）
+        const numInText = text.match(/(?<![¥￥$\w\d.])(\d{2,4})(?=\s*(元|起|\n|$))/g);
+        if (numInText) {
+            numInText.forEach(n => {
+                const v = parseFloat(n);
+                if (v > 10 && v < 100000) allPrices.push({ raw: n, value: v, index: -1 });
+            });
         }
 
-        // 解析价格
-        let price = 0;
-        const pricePatterns = [
-            /[¥￥]\s*([\d,]+\.?\d*)/,
-            /\(\s*RMB\s*\)?\s*([\d,]+\.?\d*)/i,
-            /价格[：:\s]*[¥￥]?\s*([\d,]+\.?\d*)/i,
-            /([\d,]+\.?\d*)\s*元?/,
-        ];
-        for (const p of pricePatterns) {
-            const m = text.match(p);
-            if (m) { price = parseInt(m[1].replace(/,/g, "")); break; }
+        // 智能选择最佳价格：优先非整数（如575.04），其次较大的数
+        let bestPrice = 0;
+        if (allPrices.length > 0) {
+            // 先找带小数的（通常是真实价格）
+            const decimalPrices = allPrices.filter(p => p.value % 1 !== 0);
+            if (decimalPrices.length > 0) {
+                bestPrice = Math.round(decimalPrices[0].value);
+            } else {
+                // 都取整了，取中间值（排除太小的）
+                const valid = allPrices.filter(p => p.value >= 50).sort((a,b) => b.value - a.value);
+                if (valid.length > 0) bestPrice = Math.round(valid[0].value);
+            }
+        }
+
+        // --- 智能提取商品名称 ---
+        let name = "";
+        // 优先级1：找包含英文+数字的型号行（如 "Lenovo L24-4C"）
+        for (const line of lines) {
+            if (/^[A-Za-z][A-Za-z0-9\s\-\/\.]{2,40}$/.test(line) && /\d/.test(line)) {
+                name = line.trim();
+                break;
+            }
+        }
+        // 优先级2：找较长的中文行（商品全称），跳过纯价格/促销文字
+        if (!name) {
+            for (const line of lines) {
+                // 跳过明显不是名称的行
+                if (/^[\d¥￥$.,\s]+$/.test(line)) continue;
+                if (/补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册/.test(line)) continue;
+                if (/^\d+%$/.test(line)) continue;  // 如 "4%"
+                if (line.length < 4) continue;
+                if (line.length <= 50) { name = line; break; }
+            }
+        }
+        // 优先级3：如果还没找到，取第一行长文本
+        if (!name) {
+            for (const line of lines) {
+                if (line.length >= 4 && !/^[\d¥￥$.,\s]+$/.test(line)) {
+                    name = line.substring(0, 50);
+                    break;
+                }
+            }
         }
 
         progressFill.style.width = "100%";
@@ -279,13 +322,16 @@ async function startOcr(imageData) {
 
         // 填入表单
         if (name) document.getElementById("edit-name").value = name;
-        if (price) document.getElementById("edit-price").value = price;
+        if (bestPrice) document.getElementById("edit-price").value = bestPrice;
 
         // 将截图转为商品图片（压缩后）
         await setOcrImage(imageData);
 
         resultDiv.className = "fetch-result success";
-        resultDiv.innerHTML = `✅ 识别成功！<br>名称：${esc(name)}<br>价格：¥${price || "未识别"}<br>图片已自动填入，请确认后保存。`;
+        resultDiv.innerHTML = `✅ 识别成功！<br>
+            <b>名称：</b>${esc(name || "未识别")}<br>
+            <b>价格：</b>¥${bestPrice || "未识别"}${allPrices.length > 1 ? '<br><small style="color:#888">识别到 '+allPrices.length+' 个价格，已选最优值</small>' : ''}<br>
+            图片已自动填入（截图本身），请确认后保存。`;
         resultDiv.style.display = "block";
         showToast("识别成功！");
 
@@ -304,16 +350,33 @@ async function setOcrImage(imageData) {
         const img = new Image();
         img.onload = function() {
             const canvas = document.createElement("canvas");
-            // 压缩图片：最大宽度 400px
             let w = img.width;
             let h = img.height;
-            if (w > 400) { h = h * 400 / w; w = 400; }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, w, h);
-            // 转为 JPEG data URL（质量 0.7）
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+            // 智能裁剪：对于竖向淘宝截图，尝试截取中间的商品图区域
+            // 典型淘宝截图布局：顶部品牌区 → 中间商品大图 → 底部价格/信息
+            if (h > w * 1.3 && h > 400) {
+                // 竖向截图：取中间 60% 高度区域（通常是商品主图）
+                const cropTop = Math.round(h * 0.18);
+                const cropH = Math.round(h * 0.55);
+                canvas.width = w;
+                canvas.height = cropH;
+
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
+            } else {
+                // 横向或小图：压缩到最大宽度 500px
+                let maxW = 500;
+                if (w > maxW) { h = h * maxW / w; w = maxW; }
+                canvas.width = w;
+                canvas.height = h;
+
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+            }
+
+            // 转为 JPEG data URL（质量 0.75）
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
             document.getElementById("edit-image").value = dataUrl;
             document.getElementById("edit-image-url").value = dataUrl;
             document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
