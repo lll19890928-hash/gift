@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#ff6b8a">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
     <!-- 顶部 -->
@@ -66,11 +67,24 @@
             <div class="modal-body">
                 <form id="edit-form">
                     <input type="hidden" id="edit-id">
+                    <input type="hidden" id="edit-image">
 
-                    <!-- 方式一：粘贴链接识别 -->
+                    <!-- 方式一：扫描二维码 -->
                     <div class="fetch-section">
-                        <div class="fetch-title">📱 方式一：粘贴商品链接自动识别</div>
-                        <div class="fetch-desc">从淘宝/京东App复制链接，粘贴到下方，点「识别」自动填入</div>
+                        <div class="fetch-title">📷 方式一：扫描商品二维码</div>
+                        <div class="fetch-desc">用摄像头扫描商品二维码，自动识别商品信息</div>
+                        <button type="button" class="fetch-btn" onclick="startScan()" style="width:100%;margin-bottom:8px;">📷 扫描二维码</button>
+                        <div id="scan-area" style="display:none;">
+                            <div id="reader" style="width:100%;"></div>
+                            <button type="button" class="fetch-btn" onclick="stopScan()" style="width:100%;margin-top:8px;background:#999;">取消扫描</button>
+                        </div>
+                        <div class="fetch-result" id="scan-result" style="display:none;"></div>
+                    </div>
+
+                    <!-- 方式二：粘贴链接识别 -->
+                    <div class="fetch-section" style="margin-top:12px;">
+                        <div class="fetch-title">🔗 方式二：粘贴商品链接自动识别</div>
+                        <div class="fetch-desc">从淘宝/京东App复制链接，粘贴到下方，点「识别」自动填入图片、名称、价格</div>
                         <div class="fetch-row">
                             <input type="text" id="fetch-url" placeholder="粘贴商品链接" class="fetch-input">
                             <button type="button" class="fetch-btn" id="btn-fetch" onclick="fetchFromLink()">识别</button>
@@ -78,15 +92,24 @@
                         <div class="fetch-result" id="fetch-result"></div>
                     </div>
 
-                    <!-- 方式二：快速粘贴 -->
+                    <!-- 方式三：快速粘贴 -->
                     <div class="fetch-section" style="margin-top:12px;">
-                        <div class="fetch-title">⚡ 方式二：快速粘贴（推荐）</div>
+                        <div class="fetch-title">⚡ 方式三：快速粘贴（推荐）</div>
                         <div class="fetch-desc">从淘宝/京东App复制商品标题+价格，粘贴到下方，自动识别填入</div>
                         <textarea id="quick-paste" placeholder="粘贴商品标题和价格，例如：&#10;Apple iPhone 15 Pro Max 256GB 蓝色钛金属&#10;¥9,299.00" class="quick-paste-box"></textarea>
                         <button type="button" class="fetch-btn" onclick="quickParse()" style="width:100%;margin-top:8px;">一键识别填入</button>
                     </div>
                     
                     <hr class="divider">
+
+                    <!-- 图片预览 -->
+                    <div class="field">
+                        <label>商品图片</label>
+                        <div id="image-preview" class="image-preview">
+                            <div class="image-placeholder">暂无图片</div>
+                        </div>
+                        <input type="text" id="edit-image-url" placeholder="或手动输入图片网址（选填）" class="input-img-url" oninput="setImageFromUrl(this.value)">
+                    </div>
 
                     <div class="field">
                         <label>礼物名称 *</label>

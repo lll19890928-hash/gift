@@ -202,6 +202,20 @@ body {
     justify-content: center;
     font-size: 48px;
 }
+.card-img-wrap {
+    width: 100%;
+    height: 160px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8f8f8;
+}
+.card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 .card-info {
     padding: 12px;
 }
@@ -451,4 +465,98 @@ body {
 .toast.show {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 图片预览 ===== */
+.image-preview {
+    width: 100%;
+    height: 160px;
+    border-radius: 12px;
+    background: #f8f8f8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 8px;
+    border: 2px dashed #e0e0e0;
+}
+.image-placeholder {
+    color: #bbb;
+    font-size: 14px;
+}
+.preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.input-img-url {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid #f0e0ec;
+    border-radius: 12px;
+    font-size: 13px;
+    outline: none;
+    background: #fff;
+    margin-top: 4px;
+}
+.input-img-url:focus {
+    border-color: #ff6b8a;
+}
+
+/* ===== 二维码扫描区域 ===== */
+#reader {
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+}
+#reader video {
+    border-radius: 12px;
+}
+#reader__scan_region {
+    border-radius: 12px;
+}
+
+/* ===== 详情页图片 ===== */
+.detail-img {
+    width: 100%;
+    max-width: 260px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+/* ===== 深度链接按钮 ===== */
+.detail-btns {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+.btn-deep-link {
+    padding: 14px 32px;
+    background: linear-gradient(135deg, #ff6b8a, #ff8eb4);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    display: inline-block;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+}
+.btn-browser-link {
+    padding: 14px 32px;
+    background: #f0f0f0;
+    color: #666;
+    text-decoration: none;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
 }
