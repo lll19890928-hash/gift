@@ -56,6 +56,10 @@ function getDefaultGifts() {
         {id:3, name:"迪士尼米老鼠美式半自动咖啡机 办公室单人", price:230, cat:"家电", link:"", image:"images/disney-coffee.png", received:false, priority:3},
         {id:4, name:"2026新款卧室轻奢垃圾桶 大容量带轮翻盖纸篓", price:53, cat:"日用", link:"", image:"images/trash-can.png", received:false, priority:1},
         {id:5, name:"高级感黑色短靴女真皮尖头粗跟裤管靴中筒骑士", price:189, cat:"鞋包", link:"", image:"images/black-boots.png", received:false, priority:2},
+        {id:6, name:"千问AI眼镜S1 智能眼镜 3D显示大模型翻译提词运动相机", price:4998, cat:"数码", link:"", image:"images/qianwen-ai-glass.png", received:false, priority:3},
+        {id:7, name:"血糖血压智能手环 高清蓝牙通话 一键测呼救", price:379, cat:"数码", link:"", image:"images/blood-sugar-bracelet.png", received:false, priority:2},
+        {id:8, name:"韩国VT固态PDRN水光补水保湿棒 润9.5g可上飞机", price:139, cat:"护肤", link:"", image:"images/pdrn-stick.png", received:false, priority:2},
+        {id:9, name:"韩国anua PDRN透明质酸水光面膜 鱼腥草面膜补水保湿", price:40, cat:"护肤", link:"", image:"images/anua-mask.png", received:false, priority:1},
     ];
 }
 
@@ -63,12 +67,13 @@ function getDefaultGifts() {
 function renderCatGrid() {
     const cats = [
         {key:"护肤", icon:"✨", label:"护肤美妆", color:"#fce4ec"},
+        {key:"数码", icon:"👓", label:"数码科技", color:"#e3f2fd"},
         {key:"家电", icon:"🏠", label:"家居家电", color:"#e8f5e9"},
         {key:"日用", icon:"📦", label:"日用好物", color:"#fff3e0"},
         {key:"鞋包", icon:"👢", label:"鞋包配饰", color:"#f3e5f5"},
-        {key:"电子产品", icon:"📱", label:"电子产品", color:"#e3f2fd"},
+        {key:"电子产品", icon:"📱", label:"电子产品", color:"#e0f7fa"},
         {key:"书籍", icon:"📚", label:"书籍", color:"#e0f2f1"},
-        {key:"运动", icon:"⚽", label:"运动户外", color:"#e0f7fa"},
+        {key:"运动", icon:"⚽", label:"运动户外", color:"#e8f5e9"},
         {key:"其他", icon:"🎁", label:"其他", color:"#fafafa"},
     ];
 
