@@ -374,7 +374,7 @@ function renderCatGrid() {
 
 // ===== 渲染标签 =====
 function renderTags() {
-    const tags = ["全部", "想要", "已收到"];
+    const tags = ["全部", "已收到"];
     document.getElementById("tags").innerHTML = tags.map(t =>
         `<button class="tag ${t===currentFilter?'active':''}" onclick="setFilter('${t}')">${t}</button>`
     ).join("");
@@ -390,8 +390,7 @@ function setFilter(f) {
 // ===== 渲染礼物列表 =====
 function renderGrid() {
     let list = [...gifts];
-    if (currentFilter === "想要") list = list.filter(g => !g.received);
-    else if (currentFilter === "已收到") list = list.filter(g => g.received);
+    if (currentFilter === "已收到") list = list.filter(g => g.received);
     else if (currentFilter !== "全部") list = list.filter(g => g.cat === currentFilter);
 
     const grid = document.getElementById("grid");
@@ -526,7 +525,7 @@ async function inlineToggleRecv(id, checked) {
     await saveGifts();
     renderCatGrid();
     updateStats();
-    showToast(checked ? "已标记收到 ✓" : "已标记想要");
+    showToast(checked ? "已标记收到 ✓" : "已标记为想要");
 }
 
 function inlineChangeImage(id, event) {
@@ -539,11 +538,17 @@ function inlineChangeImage(id, event) {
         img.onload = async function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
-            // 优化：缩小图片尺寸
-            if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            // 默认选取上半截（核心产品图片在上面）
+            let srcX = 0, srcY = 0, srcW = w, srcH = h;
+            if (h > w * 1.2) {
+                srcH = Math.round(h * 0.5);
+            }
+            // 缩小到最大宽度
+            let outW = srcW, outH = srcH;
+            if (outW > IMAGE_MAX_WIDTH) { outH = srcH * IMAGE_MAX_WIDTH / srcW; outW = IMAGE_MAX_WIDTH; }
+            canvas.width = outW;
+            canvas.height = outH;
+            canvas.getContext("2d").drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
             const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             const g = gifts.find(x => x.id === id);
             if (!g) return;
@@ -584,11 +589,17 @@ function handleNewImage(event) {
         img.onload = function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
-            // 优化：缩小图片尺寸，减少质量
-            if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            // 默认选取上半截（核心产品图片在上面）
+            let srcX = 0, srcY = 0, srcW = w, srcH = h;
+            if (h > w * 1.2) {
+                srcH = Math.round(h * 0.5);
+            }
+            // 缩小到最大宽度
+            let outW = srcW, outH = srcH;
+            if (outW > IMAGE_MAX_WIDTH) { outH = srcH * IMAGE_MAX_WIDTH / srcW; outW = IMAGE_MAX_WIDTH; }
+            canvas.width = outW;
+            canvas.height = outH;
+            canvas.getContext("2d").drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
             const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             document.getElementById("edit-image").value = dataUrl;
             document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img" loading="lazy">`;
@@ -609,22 +620,36 @@ function setImageFromUrl(url) {
     }
 }
 
-// ===== 图片预处理：缩放 + 灰度 + 对比度 + 二值化 =====
+// ===== 图片预处理：截取下半部分文字区域 + 缩放 + 灰度 + 对比度 + 二值化 =====
 function preprocessImage(imageData) {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
+
+            // 只截取图片下半部分（产品名称和价格在图片下方，避免产品图片上的文字干扰）
+            let srcX = 0, srcY = 0, srcW = w, srcH = h;
+            if (h > w * 1.2) {
+                // 竖图（手机截图）：从 45% 处开始截取到底部
+                srcY = Math.round(h * 0.45);
+                srcH = h - srcY;
+            } else {
+                // 横图：从 30% 处开始
+                srcY = Math.round(h * 0.3);
+                srcH = h - srcY;
+            }
+
             // 限制最大宽度，提高识别速度和准确率
             const maxW = 1200;
-            if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
-            canvas.width = w;
-            canvas.height = h;
+            let outW = srcW, outH = srcH;
+            if (outW > maxW) { outH = Math.round(srcH * maxW / srcW); outW = maxW; }
+            canvas.width = outW;
+            canvas.height = outH;
             const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, w, h);
+            ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
 
-            const imgData = ctx.getImageData(0, 0, w, h);
+            const imgData = ctx.getImageData(0, 0, outW, outH);
             const data = imgData.data;
 
             // 灰度化 + 对比度增强 + 二值化
@@ -716,11 +741,9 @@ async function startOcr(imageData) {
             });
         }
 
-        // 2. 提取下半部分的纯数字价格
+        // 2. 提取纯数字价格（OCR已只识别下半部分，不再按行号过滤）
         let numPrices = [];
         lines2.forEach((line, lineIdx) => {
-            // 只取图片下半部分
-            if (lineIdx < totalLines * 0.35) return;
             // 过滤包含促销词的行
             if (/原价|划线价|门市价|专柜价|吊牌价|建议价|到手价约|预估|满|减|券|折|补贴|政府|可用/.test(line)) return;
             const nums = line.match(/\b(\d{2,5})(?:\.\d{1,2})?\b/g);
@@ -734,15 +757,12 @@ async function startOcr(imageData) {
             }
         });
 
-        // 3. 选择最可能的价格：优先带符号的价格，且靠下的；其次靠下的纯数字
+        // 3. 选择最可能的价格：优先带符号的价格；其次纯数字
         let candidatePrices = symbolPrices.length > 0 ? symbolPrices : numPrices;
         if (candidatePrices.length > 0) {
-            // 优先选择图片下半部分的价格
-            const lowerHalf = candidatePrices.filter(p => p.lineIdx >= totalLines * 0.45);
-            const pool = lowerHalf.length > 0 ? lowerHalf : candidatePrices;
             // 按行号（靠下）和数值综合排序，优先靠下的
-            pool.sort((a, b) => b.lineIdx - a.lineIdx || b.value - a.value);
-            bestPrice = Math.round(pool[0].value);
+            candidatePrices.sort((a, b) => b.lineIdx - a.lineIdx || b.value - a.value);
+            bestPrice = Math.round(candidatePrices[0].value);
         }
 
         // 名称提取
@@ -762,8 +782,8 @@ async function startOcr(imageData) {
             .sort((a, b) => b.line.length - a.line.length);
 
         if (candidates.length > 0) {
-            // 优先选择上半部分较长的商品名（淘宝截图通常在顶部）
-            const upper = candidates.filter(c => c.idx < totalLines * 0.6);
+            // OCR已只识别下半部分，产品名称在前几行（紧挨产品图下方）
+            const upper = candidates.filter(c => c.idx < totalLines * 0.5);
             name = upper.length > 0 ? upper[0].line : candidates[0].line;
         }
 
@@ -809,19 +829,18 @@ async function setOcrImage(imageData) {
         img.onload = function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
+            // 默认选取上半截（核心产品图片在上面）
+            let srcX = 0, srcY = 0, srcW = w, srcH = h;
             if (h > w * 1.2) {
-                const cropTop = Math.round(h * 0.15);
-                const cropH = Math.round(h * 0.6);
-                canvas.width = w;
-                canvas.height = cropH;
-                canvas.getContext("2d").drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
-            } else {
-                // 优化：缩小图片尺寸
-                if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
-                canvas.width = w;
-                canvas.height = h;
-                canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+                // 竖图（手机截图）：只取上半截
+                srcH = Math.round(h * 0.5);
             }
+            // 缩小到最大宽度
+            let outW = srcW, outH = srcH;
+            if (outW > IMAGE_MAX_WIDTH) { outH = srcH * IMAGE_MAX_WIDTH / srcW; outW = IMAGE_MAX_WIDTH; }
+            canvas.width = outW;
+            canvas.height = outH;
+            canvas.getContext("2d").drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
             const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             document.getElementById("edit-image").value = dataUrl;
             document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img" loading="lazy">`;
