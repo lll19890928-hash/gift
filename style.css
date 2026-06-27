@@ -407,17 +407,28 @@ body {
 /* ===== 感谢语横幅（顶部） ===== */
 .thanks-banner {
     background: linear-gradient(135deg, #fff5f8, #ffe8f0);
-    padding: 10px 16px;
+    padding: clamp(14px, 2.5vw, 20px) clamp(16px, 3vw, 32px);
     text-align: center;
     font-size: clamp(12px, 2vw, 15px);
     color: #c4687a;
     font-weight: 600;
     border-bottom: 1px solid #fce4ec;
-    line-height: 1.5;
+    line-height: 2;
 }
 .thanks-banner-inner {
     max-width: 1400px;
     margin: 0 auto;
+}
+.thanks-highlight {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 6px 16px;
+    background: linear-gradient(135deg, #ffe0eb, #ffc0d4);
+    border-radius: 20px;
+    color: #ff6b9c;
+    font-weight: 700;
+    font-size: clamp(12px, 2vw, 16px);
+    box-shadow: 0 2px 8px rgba(255,107,138,0.15);
 }
 
 /* ===== 底部感谢语（简化版） ===== */
