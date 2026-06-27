@@ -460,7 +460,7 @@ function renderEditableCard(g) {
         <div class="card-edit-toolbar">
             <label class="card-recv-toggle">
                 <input type="checkbox" ${g.received?'checked':''} onchange="inlineToggleRecv(${g.id}, this.checked)">
-                <span>${g.received?'✅ 已收到':'🎁 想要'}</span>
+                <span>${g.received?'✅ 已收到':'☐ 未收到'}</span>
             </label>
             <button class="card-del-btn" onclick="deleteGift(${g.id})">🗑️ 删除</button>
         </div>
