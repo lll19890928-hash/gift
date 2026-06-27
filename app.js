@@ -117,7 +117,7 @@ function toggleAddForm() {
 function saveNewGift() {
     const name = document.getElementById("edit-name").value.trim();
     const price = parseInt(document.getElementById("edit-price").value) || 0;
-    const link = document.getElementById("edit-link").value.trim();
+    const link = normalizeLink(document.getElementById("edit-link").value);
     const cat = document.getElementById("edit-cat").value;
     const image = document.getElementById("edit-image").value.trim();
 
@@ -203,9 +203,10 @@ function renderGrid() {
 }
 
 function renderViewCard(g) {
-    const hasLink = g.link && g.link.trim();
+    const link = normalizeLink(g.link);
+    const hasLink = link && link.trim();
     const buyBtn = hasLink
-        ? `<a href="${esc(g.link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">去购买 🛒</a>`
+        ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">去购买 🛒</a>`
         : `<span class="card-no-link">暂无链接</span>`;
     const recvBadge = g.received ? `<div class="badge">✅ 已收到</div>` : "";
     
@@ -276,7 +277,7 @@ function renderEditableCard(g) {
             <input type="text" class="inline-input inline-link" value="${esc(g.link||'')}" placeholder="购买链接（淘宝/京东等）"
                 onblur="inlineUpdate(${g.id}, 'link', this.value.trim())">
             <div class="card-bottom">
-                ${g.link ? `<a href="${esc(g.link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">🛒 测试链接</a>` : `<span class="card-no-link">未设置链接</span>`}
+                ${normalizeLink(g.link) ? `<a href="${esc(normalizeLink(g.link))}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">🛒 测试链接</a>` : `<span class="card-no-link">未设置链接</span>`}
                 <span class="inline-saved" id="saved-${g.id}">✓ 已保存</span>
             </div>
         </div>
@@ -287,6 +288,7 @@ function renderEditableCard(g) {
 function inlineUpdate(id, field, value) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
+    if (field === "link") value = normalizeLink(value);
     if (g[field] === value) return;
     g[field] = value;
     saveGifts();
@@ -391,6 +393,40 @@ function setImageFromUrl(url) {
     }
 }
 
+// ===== 图片预处理：缩放 + 灰度 + 对比度 + 二值化 =====
+function preprocessImage(imageData) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement("canvas");
+            let w = img.width, h = img.height;
+            // 限制最大宽度，提高识别速度和准确率
+            const maxW = 1200;
+            if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+
+            // 灰度化 + 对比度增强 + 二值化
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+                const contrast = 1.6;
+                let adjusted = ((gray - 128) * contrast) + 128;
+                // 二值化：文字更黑，背景更白
+                adjusted = adjusted > 175 ? 255 : 0;
+                data[i] = data[i+1] = data[i+2] = adjusted;
+            }
+            ctx.putImageData(imgData, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+        };
+        img.src = imageData;
+    });
+}
+
 // ===== OCR 截图识别 =====
 function handleOcrUpload(event) {
     const file = event.target.files[0];
@@ -410,15 +446,21 @@ async function startOcr(imageData) {
 
     progressDiv.style.display = "block";
     resultDiv.style.display = "none";
-    progressText.textContent = "正在加载识别引擎...";
+    progressText.textContent = "正在预处理图片...";
     progressFill.style.width = "10%";
 
     try {
         showToast("正在识别图片文字...");
+        progressText.textContent = "正在优化图片质量...";
+        progressFill.style.width = "20%";
+
+        // 图片预处理：缩放 + 灰度 + 对比度增强 + 二值化
+        const processedImage = await preprocessImage(imageData);
+
         progressText.textContent = "正在识别文字...";
         progressFill.style.width = "30%";
 
-        const result = await Tesseract.recognize(imageData, "chi_sim+eng", {
+        const result = await Tesseract.recognize(processedImage, "chi_sim+eng", {
             logger: (m) => {
                 if (m.status === "recognizing text") {
                     const p = Math.round(30 + m.progress * 60);
@@ -437,57 +479,92 @@ async function startOcr(imageData) {
         const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
         // 价格提取
-        let allPrices = [];
+        let bestPrice = 0;
+        const lines2 = text.split("\n");
+        const totalLines = lines2.length;
+
+        // 1. 提取带 ¥/$ 符号的价格，并记录所在行
+        let symbolPrices = [];
         const priceRegex = /[¥￥$]\s*([\d,]+\.?\d*)/g;
         let priceMatch;
         while ((priceMatch = priceRegex.exec(text)) !== null) {
-            allPrices.push({ raw: priceMatch[0], value: parseFloat(priceMatch[1].replace(/,/g, "")), index: priceMatch.index });
+            const before = text.substring(Math.max(0, priceMatch.index - 20), priceMatch.index);
+            // 过滤原价、划线价提示
+            if (/原价|划线价|门市价|专柜价|吊牌价|建议价/.test(before)) continue;
+            const lineIdx = text.substring(0, priceMatch.index).split("\n").length - 1;
+            symbolPrices.push({
+                raw: priceMatch[0],
+                value: parseFloat(priceMatch[1].replace(/,/g, "")),
+                lineIdx,
+                hasSymbol: true
+            });
         }
-        const lines2 = text.split("\n");
-        const totalLines = lines2.length;
+
+        // 2. 提取下半部分的纯数字价格
+        let numPrices = [];
         lines2.forEach((line, lineIdx) => {
-            const nums = line.match(/\b(\d{3,5})\b/g);
-            if (nums && lineIdx > totalLines * 0.5) {
+            // 只取图片下半部分
+            if (lineIdx < totalLines * 0.35) return;
+            // 过滤包含促销词的行
+            if (/原价|划线价|门市价|专柜价|吊牌价|建议价|到手价约|预估|满|减|券|折|补贴|政府|可用/.test(line)) return;
+            const nums = line.match(/\b(\d{2,5})(?:\.\d{1,2})?\b/g);
+            if (nums) {
                 nums.forEach(n => {
                     const v = parseFloat(n);
-                    if (v > 10 && v < 100000) {
-                        allPrices.push({ raw: n, value: v, index: -1, lineIdx });
+                    if (v >= 10 && v <= 50000) {
+                        numPrices.push({ raw: n, value: v, lineIdx, hasSymbol: false });
                     }
                 });
             }
         });
 
-        let bestPrice = 0;
-        if (allPrices.length > 0) {
-            const lowerPrices = allPrices.filter(p => p.lineIdx === undefined || p.lineIdx > totalLines * 0.4);
-            const pricePool = lowerPrices.length > 0 ? lowerPrices : allPrices;
-            const decimalPrices = pricePool.filter(p => p.value % 1 !== 0);
-            if (decimalPrices.length > 0) {
-                bestPrice = Math.round(decimalPrices[0].value);
-            } else {
-                const sorted = pricePool.map(p => p.value).sort((a,b) => b - a);
-                bestPrice = Math.round(sorted[0]);
-            }
+        // 3. 选择最可能的价格：优先带符号的价格，且靠下的；其次靠下的纯数字
+        let candidatePrices = symbolPrices.length > 0 ? symbolPrices : numPrices;
+        if (candidatePrices.length > 0) {
+            // 优先选择图片下半部分的价格
+            const lowerHalf = candidatePrices.filter(p => p.lineIdx >= totalLines * 0.45);
+            const pool = lowerHalf.length > 0 ? lowerHalf : candidatePrices;
+            // 按行号（靠下）和数值综合排序，优先靠下的
+            pool.sort((a, b) => b.lineIdx - a.lineIdx || b.value - a.value);
+            bestPrice = Math.round(pool[0].value);
         }
 
         // 名称提取
+        const noiseWords = /补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册|登录|包邮|运费|险|天猫|淘宝|京东|旗舰店|官方|正品|秒杀|限时|特惠|优惠|促销|满减|领券|券后|到手价|约价|预估|原价|现价|划线价|价格|¥|￥|$|官方旗舰店|已售|月销|收藏|加购|购物车|立即购买|下单|商品|详情|参数|评价|推荐|相似|精选|热门|爆款|销量|店铺|客服|首页|分类|我的|足迹/;
         let name = "";
-        for (const line of lines) {
-            if (/^[A-Za-z][A-Za-z0-9\s\-\/\.]{2,40}$/.test(line) && /\d/.test(line)) { name = line.trim(); break; }
+
+        // 候选行：过滤噪音后，按长度排序
+        const candidates = lines
+            .map((line, idx) => ({ line, idx }))
+            .filter(({ line }) => {
+                if (line.length < 4 || line.length > 60) return false;
+                if (/^[\d¥￥$.,\s\-]+$/.test(line)) return false;
+                if (/^\d+%$/.test(line)) return false;
+                if (noiseWords.test(line)) return false;
+                return true;
+            })
+            .sort((a, b) => b.line.length - a.line.length);
+
+        if (candidates.length > 0) {
+            // 优先选择上半部分较长的商品名（淘宝截图通常在顶部）
+            const upper = candidates.filter(c => c.idx < totalLines * 0.6);
+            name = upper.length > 0 ? upper[0].line : candidates[0].line;
         }
+
+        // 如果没找到，放宽条件
         if (!name) {
             for (const line of lines) {
-                if (/^[\d¥￥$.,\s]+$/.test(line)) continue;
-                if (/补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册|登录/.test(line)) continue;
-                if (/^\d+%$/.test(line)) continue;
-                if (line.length < 3) continue;
-                if (line.length <= 50) { name = line; break; }
+                if (line.length >= 3 && !/^[\d¥￥$.,\s]+$/.test(line)) {
+                    name = line.substring(0, 50);
+                    break;
+                }
             }
         }
-        if (!name) {
-            for (const line of lines) {
-                if (line.length >= 3 && !/^[\d¥￥$.,\s]+$/.test(line)) { name = line.substring(0, 50); break; }
-            }
+
+        // 清理名称中的噪音
+        if (name) {
+            name = name.replace(/\s+/g, " ").trim();
+            if (name.length > 50) name = name.substring(0, 50);
         }
 
         progressFill.style.width = "100%";
@@ -555,7 +632,7 @@ function quickParse() {
     if (price) document.getElementById("edit-price").value = price;
 
     const linkMatch = text.match(/(https?:\/\/[^\s]+)/);
-    if (linkMatch) document.getElementById("edit-link").value = linkMatch[1];
+    if (linkMatch) document.getElementById("edit-link").value = normalizeLink(linkMatch[1]);
 
     showToast("✅ 已自动填入，请确认后保存");
 }
@@ -563,6 +640,16 @@ function quickParse() {
 // ===== 工具函数 =====
 function getEmoji(cat) {
     return {"护肤":"✨","数码":"💻","家电":"🏠","日用":"🧴","鞋包":"👢","衣服":"👗","鲜花水果":"💐","零食":"🍰","虚拟服务":"🎮","书籍":"📚","运动":"⚽","其他":"🎁"}[cat] || "🎁";
+}
+
+function normalizeLink(url) {
+    if (!url) return "";
+    url = url.trim();
+    if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
+    if (/^\/\//.test(url)) return "https:" + url;
+    // 处理如 m.tb.cn/xxxxx 的短链
+    if (/^[a-z0-9]+\.[a-z0-9]+/i.test(url)) return "https://" + url;
+    return url;
 }
 
 function esc(s) {
