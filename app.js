@@ -16,11 +16,14 @@ let syncStatus = "loading"; // loading | synced | offline | error
 // ===== 初始化 =====
 document.addEventListener("DOMContentLoaded", async () => {
     initSupabase();
-    await loadGifts();
+    // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
+    loadLocalGifts();
     renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
+    // 2. 后台尝试从云端同步（不阻塞首屏）
+    syncFromCloud();
 });
 
 // ===== Supabase =====
@@ -69,57 +72,65 @@ function setSyncStatus(status, msg) {
     bar.style.display = "flex";
 }
 
-async function loadGifts() {
-    setSyncStatus("loading");
-    let cloudLoaded = false;
+function loadLocalGifts() {
+    try {
+        const d = localStorage.getItem(STORAGE_KEY);
+        if (d) gifts = JSON.parse(d);
+    } catch (e) {}
+    if (!gifts.length) gifts = getDefaultGifts();
+    normalizeGifts();
+}
 
-    // 1. 尝试从 Supabase 云端读取
-    if (supabase) {
-        try {
-            const { data, error } = await supabase
-                .from("wishlist")
-                .select("data")
-                .eq("id", 1)
-                .single();
+async function syncFromCloud() {
+    if (!supabase) {
+        setSyncStatus("error", window.__syncErr || "云端同步未启用");
+        return;
+    }
+    setSyncStatus("loading", "正在连接云端...");
+    try {
+        // 5 秒超时，避免网络卡住导致页面一直 loading
+        const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("连接云端超时")), 5000)
+        );
+        const fetchCloud = supabase.from("wishlist").select("data").eq("id", 1).single();
+        const { data, error } = await Promise.race([fetchCloud, timeout]);
 
-            if (error) {
-                // 没有记录（PGRST116）时创建默认数据
-                if (error.code === "PGRST116" || error.message.includes("0 rows")) {
-                    const defaults = getDefaultGifts();
-                    await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() });
-                    gifts = defaults;
-                    cloudLoaded = true;
-                } else {
-                    throw error;
-                }
-            } else if (data && Array.isArray(data.data)) {
-                gifts = data.data;
-                cloudLoaded = true;
+        if (error) {
+            // 没有记录（PGRST116）时把默认数据上传到云端
+            if (error.code === "PGRST116" || (error.message && error.message.includes("0 rows"))) {
+                const defaults = getDefaultGifts();
+                await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
+                gifts = defaults;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+                normalizeGifts();
+                renderCatGrid();
+                renderTags();
+                renderGrid();
+                updateStats();
+                setSyncStatus("synced", "已同步到云端");
+            } else {
+                throw error;
             }
-        } catch (e) {
-            console.error("云端读取失败", e);
-        }
-    }
-
-    // 2. 云端失败或未初始化，尝试本地缓存
-    if (!cloudLoaded) {
-        try {
-            const d = localStorage.getItem(STORAGE_KEY);
-            if (d) gifts = JSON.parse(d);
-        } catch (e) {}
-        if (!gifts.length) gifts = getDefaultGifts();
-        if (!supabase) {
-            setSyncStatus("error", window.__syncErr || "云端同步未启用");
+        } else if (data && Array.isArray(data.data)) {
+            gifts = data.data;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+            normalizeGifts();
+            renderCatGrid();
+            renderTags();
+            renderGrid();
+            updateStats();
+            setSyncStatus("synced", "已同步到云端");
         } else {
-            setSyncStatus("offline", "离线模式（使用本地缓存）");
+            throw new Error("云端数据格式异常");
         }
-    } else {
-        setSyncStatus("synced");
-        // 本地也存一份作为缓存
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+    } catch (e) {
+        console.error("云端同步失败", e);
+        window.__syncErr = e.message || "云端同步失败";
+        setSyncStatus("offline", "离线模式（使用本地缓存）");
     }
+}
 
-    // 数据规范化
+function normalizeGifts() {
     gifts.forEach(g => {
         if (!g.image) g.image = "";
         if (!g.cat) g.cat = "其他";
@@ -135,9 +146,13 @@ async function saveGifts() {
     if (supabase) {
         setSyncStatus("loading", "正在保存到云端...");
         try {
-            const { error } = await supabase
+            const timeout = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("保存云端超时")), 5000)
+            );
+            const upsertCloud = supabase
                 .from("wishlist")
                 .upsert({ id: 1, data: gifts, updated_at: new Date().toISOString() }, { onConflict: "id" });
+            const { error } = await Promise.race([upsertCloud, timeout]);
 
             if (error) throw error;
             setSyncStatus("synced", "已同步到云端");
