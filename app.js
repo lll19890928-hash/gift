@@ -13,16 +13,42 @@ let currentFilter = "全部";
 let supabase = null;
 let syncStatus = "loading"; // loading | synced | offline | error
 
+// ===== 调试面板 =====
+function debugLog(step, detail, isError) {
+    try {
+        const panel = document.getElementById("debug-panel");
+        const body = document.getElementById("debug-body");
+        if (!panel || !body) return;
+        panel.style.display = "block";
+        const line = document.createElement("div");
+        line.className = "debug-line" + (isError ? " debug-error" : "");
+        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        line.textContent = `[${time}] ${step}${detail ? ": " + detail : ""}`;
+        body.appendChild(line);
+    } catch (e) { /* 调试代码本身不能影响主流程 */ }
+}
+
+window.onerror = function(msg, url, line, col, err) {
+    debugLog("全局错误", msg + " @" + (line || "?") + ":" + (col || "?"), true);
+};
+window.addEventListener("unhandledrejection", function(e) {
+    debugLog("未处理Promise拒绝", (e.reason && e.reason.message) || e.reason, true);
+});
+
 // ===== 初始化 =====
 document.addEventListener("DOMContentLoaded", async () => {
+    debugLog("DOMContentLoaded", "页面初始化开始");
     initSupabase();
+    debugLog("Supabase初始化后", supabase ? "成功" : (window.__syncErr || "失败"));
     // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
     loadLocalGifts();
+    debugLog("本地礼物数", gifts.length);
     renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
     // 2. 后台尝试从云端同步（不阻塞首屏）
+    debugLog("开始云端同步", "");
     syncFromCloud();
 });
 
@@ -97,23 +123,29 @@ function loadLocalGifts() {
 
 async function syncFromCloud() {
     if (!supabase) {
+        debugLog("syncFromCloud", "supabase未初始化: " + (window.__syncErr || "未知"), true);
         setSyncStatus("error", window.__syncErr || "云端同步未启用");
         return;
     }
     setSyncStatus("loading", "正在连接云端...");
+    debugLog("syncFromCloud", "开始请求云端数据");
     try {
         // 5 秒超时，避免网络卡住导致页面一直 loading
         const timeout = new Promise((_, reject) =>
             setTimeout(() => reject(new Error("连接云端超时")), 5000)
         );
         const fetchCloud = supabase.from("wishlist").select("data").eq("id", 1).single();
+        debugLog("syncFromCloud", "已发送请求，等待响应...");
         const { data, error } = await Promise.race([fetchCloud, timeout]);
+        debugLog("syncFromCloud响应", "error=" + (error ? (error.code + " " + error.message) : "null") + ", data=" + (data ? typeof data : "null"));
 
         if (error) {
             // 没有记录（PGRST116）时把默认数据上传到云端
             if (error.code === "PGRST116" || (error.message && error.message.includes("0 rows"))) {
+                debugLog("syncFromCloud", "云端无记录，准备上传默认数据");
                 const defaults = getDefaultGifts();
-                await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
+                const { error: upErr } = await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
+                if (upErr) throw upErr;
                 gifts = defaults;
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
                 normalizeGifts();
@@ -122,6 +154,7 @@ async function syncFromCloud() {
                 renderGrid();
                 updateStats();
                 setSyncStatus("synced", "已同步到云端");
+                debugLog("syncFromCloud", "默认数据已上传并显示");
             } else {
                 throw error;
             }
@@ -134,11 +167,13 @@ async function syncFromCloud() {
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
+            debugLog("syncFromCloud", "云端数据已加载，礼物数=" + gifts.length);
         } else {
-            throw new Error("云端数据格式异常");
+            throw new Error("云端数据格式异常: " + JSON.stringify(data).slice(0, 100));
         }
     } catch (e) {
         console.error("云端同步失败", e);
+        debugLog("syncFromCloud错误", (e && e.message) || e, true);
         window.__syncErr = e.message || "云端同步失败";
         setSyncStatus("offline", "离线模式（使用本地缓存）");
     }

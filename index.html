@@ -39,6 +39,12 @@
         <span id="sync-text">正在连接云端...</span>
     </div>
 
+    <!-- 调试信息面板（排错用） -->
+    <div class="debug-panel" id="debug-panel" style="display:none;">
+        <div class="debug-title">🛠 调试信息</div>
+        <div class="debug-body" id="debug-body"></div>
+    </div>
+
     <!-- 管理员登录行（内联，非弹窗） -->
     <div class="admin-login-bar" id="admin-login-bar" style="display:none;">
         <input type="password" id="pwd-input" placeholder="输入管理密码" class="input-pwd-inline" onkeydown="if(event.key==='Enter')doLogin()">
@@ -157,6 +163,6 @@
     </div>
 
     <div class="toast" id="toast"></div>
-    <script src="app.js?v=2b2638c"></script>
+    <script src="app.js?v=debug-20260627"></script>
 </body>
 </html>
