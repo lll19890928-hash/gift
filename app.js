@@ -10,8 +10,8 @@ const SUPABASE_KEY = "sb_publishable_rEW8nZvYGj89wGisKc9Pjw_dyNq4ZdD";
 let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
-let supabase = null;
 let syncStatus = "loading"; // loading | synced | offline | error
+let sb = null; // Supabase 客户端实例（避免与 SDK 全局变量 supabase 冲突）
 
 // ===== 调试面板 =====
 function debugLog(step, detail, isError) {
@@ -38,18 +38,22 @@ window.addEventListener("unhandledrejection", function(e) {
 // ===== 等待外部 SDK 加载 =====
 function waitForSupabase(maxMs = 8000) {
     return new Promise(resolve => {
-        if (window.supabase?.createClient || window.createClient) return resolve();
+        const hasSdk = (typeof supabase !== "undefined" && supabase && supabase.createClient) ||
+                       (typeof createClient !== "undefined" && createClient);
+        if (hasSdk) return resolve();
         let attempts = 0;
         const interval = 100;
         const timer = setInterval(() => {
-            if (window.supabase?.createClient || window.createClient) {
+            const hasSdkNow = (typeof supabase !== "undefined" && supabase && supabase.createClient) ||
+                              (typeof createClient !== "undefined" && createClient);
+            if (hasSdkNow) {
                 clearInterval(timer);
                 return resolve();
             }
             attempts++;
             if (attempts * interval >= maxMs) {
                 clearInterval(timer);
-                debugLog("waitForSupabase", "等待Supabase SDK超时（外部CDN加载失败）", true);
+                debugLog("waitForSupabase", "等待Supabase SDK超时", true);
                 resolve();
             }
         }, interval);
@@ -72,10 +76,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     debugLog("等待Supabase SDK", "最多8秒...");
     await waitForSupabase();
     initSupabase();
-    debugLog("Supabase初始化后", supabase ? "成功" : (window.__syncErr || "失败"));
+    debugLog("Supabase初始化后", sb ? "成功" : (window.__syncErr || "失败"));
 
     // 3. 后台尝试从云端同步（不阻塞首屏）
-    if (supabase) {
+    if (sb) {
         debugLog("开始云端同步", "");
         syncFromCloud();
     } else {
@@ -89,24 +93,25 @@ function initSupabase() {
     try {
         if (!SUPABASE_URL || !SUPABASE_KEY) {
             window.__syncErr = "未配置 Supabase URL/Key";
-            supabase = null;
+            sb = null;
             return;
         }
-        // 兼容不同 CDN 的全局变量名
-        const clientFactory = window.supabase?.createClient || window.createClient;
+        // 兼容不同加载方式：本地UMD会创建全局 `supabase`，ESM可能创建 `createClient`
+        const sdkGlobal = (typeof supabase !== "undefined" && supabase) ? supabase : null;
+        const clientFactory = (sdkGlobal && sdkGlobal.createClient) || (typeof createClient !== "undefined" && createClient);
         if (!clientFactory) {
             window.__syncErr = "Supabase SDK 未加载（检查网络）";
-            supabase = null;
+            sb = null;
             return;
         }
-        supabase = clientFactory(SUPABASE_URL, SUPABASE_KEY);
-        if (!supabase) {
+        sb = clientFactory(SUPABASE_URL, SUPABASE_KEY);
+        if (!sb) {
             window.__syncErr = "Supabase 客户端创建失败";
         }
     } catch (e) {
         console.error("Supabase 初始化失败", e);
         window.__syncErr = "初始化错误: " + (e.message || e);
-        supabase = null;
+        sb = null;
     }
 }
 
@@ -154,8 +159,8 @@ function loadLocalGifts() {
 }
 
 async function syncFromCloud() {
-    if (!supabase) {
-        debugLog("syncFromCloud", "supabase未初始化: " + (window.__syncErr || "未知"), true);
+    if (!sb) {
+        debugLog("syncFromCloud", "sb未初始化: " + (window.__syncErr || "未知"), true);
         setSyncStatus("error", window.__syncErr || "云端同步未启用");
         return;
     }
@@ -166,7 +171,7 @@ async function syncFromCloud() {
         const timeout = new Promise((_, reject) =>
             setTimeout(() => reject(new Error("连接云端超时")), 5000)
         );
-        const fetchCloud = supabase.from("wishlist").select("data").eq("id", 1).single();
+        const fetchCloud = sb.from("wishlist").select("data").eq("id", 1).single();
         debugLog("syncFromCloud", "已发送请求，等待响应...");
         const { data, error } = await Promise.race([fetchCloud, timeout]);
         debugLog("syncFromCloud响应", "error=" + (error ? (error.code + " " + error.message) : "null") + ", data=" + (data ? typeof data : "null"));
@@ -176,7 +181,7 @@ async function syncFromCloud() {
             if (error.code === "PGRST116" || (error.message && error.message.includes("0 rows"))) {
                 debugLog("syncFromCloud", "云端无记录，准备上传默认数据");
                 const defaults = getDefaultGifts();
-                const { error: upErr } = await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
+                const { error: upErr } = await sb.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
                 if (upErr) throw upErr;
                 gifts = defaults;
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
@@ -224,13 +229,13 @@ async function saveGifts() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
 
     // 2. 异步同步到 Supabase
-    if (supabase) {
+    if (sb) {
         setSyncStatus("loading", "正在保存到云端...");
         try {
             const timeout = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("保存云端超时")), 5000)
             );
-            const upsertCloud = supabase
+            const upsertCloud = sb
                 .from("wishlist")
                 .upsert({ id: 1, data: gifts, updated_at: new Date().toISOString() }, { onConflict: "id" });
             const { error } = await Promise.race([upsertCloud, timeout]);
