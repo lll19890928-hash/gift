@@ -340,7 +340,8 @@ body {
 }
 .card:active { transform:scale(0.96); }
 .card.received { opacity:0.5; }
-.card.received .card-buy-btn { display:none; }
+.card.received .card-buy-btn,
+.card.received .card-app-btn { display:none; }
 .badge {
     position:absolute; top:8px; right:8px;
     background:linear-gradient(135deg,#ff7ba0,#ff9ec3);
@@ -374,6 +375,22 @@ body {
 }
 .card-buy-btn:active { opacity:0.8; transform:scale(0.94); }
 .card-no-link { font-size:clamp(10px, 1.2vw, 13px); color:#e0c0cc; }
+.card-app-btn {
+    display:block;
+    width:100%;
+    margin-top:8px;
+    padding: clamp(6px, 1vw, 10px);
+    background: #fff0f5;
+    color: #ff4477;
+    border: 1.5px dashed #ff9ec3;
+    border-radius: 12px;
+    font-size: clamp(10px, 1.4vw, 13px);
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+}
+.card-app-btn:active { background:#ffd6e5; transform:scale(0.96); }
 
 /* ===== 管理员编辑模式卡片 ===== */
 .card-edit-mode { width:100%; margin-bottom:4px; border:2px solid #ff9ec3; }

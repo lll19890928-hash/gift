@@ -416,9 +416,13 @@ function renderGrid() {
 function renderViewCard(g) {
     const link = normalizeLink(g.link);
     const hasLink = link && link.trim();
+    const showAppBtn = hasLink && isAppLinkable(link) && /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent || "");
     const buyBtn = hasLink
-        ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">去购买 🛒</a>`
+        ? `<button type="button" class="card-buy-btn" onclick="window.open('${esc(link)}', '_blank')">去购买 🛒</button>`
         : `<span class="card-no-link">暂无链接</span>`;
+    const appBtn = showAppBtn
+        ? `<button type="button" class="card-app-btn" onclick="openAppOrWeb('${esc(link)}')">在App打开</button>`
+        : "";
     const recvBadge = g.received ? `<div class="badge">✅ 已收到</div>` : "";
     
     // 图片HTML - 添加懒加载
@@ -441,6 +445,7 @@ function renderViewCard(g) {
                 <div class="card-price">¥${g.price.toLocaleString()}</div>
                 ${buyBtn}
             </div>
+            ${appBtn}
         </div>
     </div>`;
 }
@@ -488,7 +493,7 @@ function renderEditableCard(g) {
             <input type="text" class="inline-input inline-link" value="${esc(g.link||'')}" placeholder="购买链接（淘宝/京东等）"
                 onblur="inlineUpdate(${g.id}, 'link', this.value.trim())">
             <div class="card-bottom">
-                ${normalizeLink(g.link) ? `<a href="${esc(normalizeLink(g.link))}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">🛒 测试链接</a>` : `<span class="card-no-link">未设置链接</span>`}
+                ${normalizeLink(g.link) ? `<button type="button" class="card-buy-btn" onclick="openAppOrWeb('${esc(normalizeLink(g.link))}')">🛒 测试链接</button>` : `<span class="card-no-link">未设置链接</span>`}
                 <span class="inline-saved" id="saved-${g.id}">✓ 已保存</span>
             </div>
         </div>
@@ -842,8 +847,11 @@ function quickParse() {
     if (name) document.getElementById("edit-name").value = name;
     if (price) document.getElementById("edit-price").value = price;
 
-    const linkMatch = text.match(/(https?:\/\/[^\s]+)/);
-    if (linkMatch) document.getElementById("edit-link").value = normalizeLink(linkMatch[1]);
+    // 智能提取链接（支持淘宝/京东大段分享文案）
+    const link = extractUrl(text);
+    if (link) {
+        document.getElementById("edit-link").value = link;
+    }
 
     showToast("✅ 已自动填入，请确认后保存");
 }
@@ -853,14 +861,96 @@ function getEmoji(cat) {
     return {"护肤":"✨","数码":"💻","家电":"🏠","日用":"🧴","鞋包":"👢","衣服":"👗","鲜花水果":"💐","零食":"🍰","虚拟服务":"🎮","书籍":"📚","运动":"⚽","其他":"🎁"}[cat] || "🎁";
 }
 
+// 从一段中文分享文案中，提取第一个真实的 http/https 链接
+function extractUrl(text) {
+    if (!text) return "";
+    text = text.trim();
+    // 如果整段已经是 URL，直接返回
+    if (/^(https?:|mailto:|tel:)/i.test(text)) return text;
+
+    // 提取 https?:// 开头，直到遇到空格或常见中文/特殊结束符
+    // 兼容：?tk=xxx、短链、带 # 的片段等
+    const m = text.match(/(https?:\/\/[a-zA-Z0-9\-._~%!$&'()*+,;=:@\/]+(?:\?[a-zA-Z0-9\-._~%!$&'()*+,;=:@\/]*)?(?:#[a-zA-Z0-9\-._~%!$&'()*+,;=:@\/]*)?)/i);
+    if (m) return m[1].trim();
+
+    // 兜底：尝试 m.tb.cn/xxx 或 e.tb.cn/xxx 这种无协议的短链
+    const short = text.match(/(m\.tb\.cn|e\.tb\.cn|item\.taobao\.com|detail\.tmall\.com|item\.jd\.com|3\.cn)\/[a-zA-Z0-9\-._~%!$&'()*+,;=:@\/]+/i);
+    if (short) return "https://" + short[0];
+
+    return "";
+}
+
 function normalizeLink(url) {
     if (!url) return "";
     url = url.trim();
+    // 如果是一段分享文案，先提取真实链接
+    if (url.includes("https://") || url.includes("http://") || url.includes(".tb.cn") || url.includes("taobao.com") || url.includes("jd.com") || url.includes("tmall.com") || url.includes("3.cn")) {
+        const extracted = extractUrl(url);
+        if (extracted) url = extracted;
+    }
     if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
     if (/^\/\//.test(url)) return "https:" + url;
     // 处理如 m.tb.cn/xxxxx 的短链
     if (/^[a-z0-9]+\.[a-z0-9]+/i.test(url)) return "https://" + url;
     return url;
+}
+
+// 判断链接是否为支持 App 唤起的电商链接
+function isAppLinkable(url) {
+    if (!url) return false;
+    return /(e\.tb\.cn|m\.tb\.cn|item\.taobao|s\.click\.taobao|tmall|tb\.cn|jd\.com|3\.cn|jingdong)/i.test(url);
+}
+
+// 手机端尝试唤起 App，失败则回退到网页链接
+function openAppOrWeb(url) {
+    if (!url) return;
+    const ua = navigator.userAgent || "";
+    const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+
+    if (!isMobile || !isAppLinkable(url)) {
+        window.open(url, "_blank");
+        return;
+    }
+
+    let appUrl = "";
+    if (/e\.tb\.cn|m\.tb\.cn|item\.taobao|s\.click\.taobao|tmall|tb\.cn/i.test(url)) {
+        // 淘宝/天猫：尝试 tbopen 通用 scheme，把目标网页传进去
+        appUrl = `tbopen://m.taobao.com/tbopen/index.html?action=ali.open.nav&module=h5&url=${encodeURIComponent(url)}`;
+    } else if (/jd\.com|3\.cn|jingdong/i.test(url)) {
+        // 京东
+        if (isIOS) {
+            appUrl = `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))}`;
+        } else if (isAndroid) {
+            appUrl = `intent://#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))};end`;
+        }
+    }
+
+    if (!appUrl) {
+        window.open(url, "_blank");
+        return;
+    }
+
+    // 尝试唤起 App（用 iframe 避免当前页直接跳转）
+    const start = Date.now();
+    let iframe;
+    try {
+        iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = appUrl;
+        document.body.appendChild(iframe);
+    } catch (e) {
+        window.location.href = appUrl;
+    }
+
+    // 1.5 秒后若未离开页面，则回退到网页链接
+    setTimeout(() => {
+        if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        if (Date.now() - start < 1600) {
+            window.open(url, "_blank");
+        }
+    }, 1500);
 }
 
 function esc(s) {
