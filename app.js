@@ -35,21 +35,53 @@ window.addEventListener("unhandledrejection", function(e) {
     debugLog("未处理Promise拒绝", (e.reason && e.reason.message) || e.reason, true);
 });
 
+// ===== 等待外部 SDK 加载 =====
+function waitForSupabase(maxMs = 8000) {
+    return new Promise(resolve => {
+        if (window.supabase?.createClient || window.createClient) return resolve();
+        let attempts = 0;
+        const interval = 100;
+        const timer = setInterval(() => {
+            if (window.supabase?.createClient || window.createClient) {
+                clearInterval(timer);
+                return resolve();
+            }
+            attempts++;
+            if (attempts * interval >= maxMs) {
+                clearInterval(timer);
+                debugLog("waitForSupabase", "等待Supabase SDK超时（外部CDN加载失败）", true);
+                resolve();
+            }
+        }, interval);
+    });
+}
+
 // ===== 初始化 =====
 document.addEventListener("DOMContentLoaded", async () => {
     debugLog("DOMContentLoaded", "页面初始化开始");
-    initSupabase();
-    debugLog("Supabase初始化后", supabase ? "成功" : (window.__syncErr || "失败"));
-    // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
+    // 1. 先立即从本地加载并渲染，避免页面白屏/卡死（不依赖外部CDN）
     loadLocalGifts();
     debugLog("本地礼物数", gifts.length);
     renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
-    // 2. 后台尝试从云端同步（不阻塞首屏）
-    debugLog("开始云端同步", "");
-    syncFromCloud();
+    debugLog("首屏渲染完成", "");
+
+    // 2. 等待 Supabase SDK 加载后再初始化云端同步
+    debugLog("等待Supabase SDK", "最多8秒...");
+    await waitForSupabase();
+    initSupabase();
+    debugLog("Supabase初始化后", supabase ? "成功" : (window.__syncErr || "失败"));
+
+    // 3. 后台尝试从云端同步（不阻塞首屏）
+    if (supabase) {
+        debugLog("开始云端同步", "");
+        syncFromCloud();
+    } else {
+        debugLog("跳过云端同步", "SDK未加载或初始化失败", true);
+        setSyncStatus("offline", "离线模式（外部脚本未加载）");
+    }
 });
 
 // ===== Supabase =====
