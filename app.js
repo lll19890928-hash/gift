@@ -10,7 +10,23 @@ const SUPABASE_KEY = "sb_publishable_rEW8nZvYGj89wGisKc9Pjw_dyNq4ZdD";
 let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
+let currentSort = "default"; // default | price-asc | price-desc
+let currentPriceRange = "all";
+let searchKeyword = "";
 let syncStatus = "loading"; // loading | synced | offline | error
+
+// 价格区间定义
+const PRICE_RANGES = [
+    {key:"all",      label:"全部价格"},
+    {key:"0-100",     label:"0-100"},
+    {key:"100-500",   label:"100-500"},
+    {key:"500-1000",  label:"500-1000"},
+    {key:"1000-2000", label:"1000-2000"},
+    {key:"2000-3000", label:"2000-3000"},
+    {key:"3000-5000", label:"3000-5000"},
+    {key:"5000-10000",label:"5000-10000"},
+    {key:"10000+",    label:"10000以上"},
+];
 
 // ===== 调试日志（仅控制台，不显示在页面） =====
 function debugLog(step, detail, isError) {
@@ -61,6 +77,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadLocalGifts();
     renderCatGrid();
     renderTags();
+    renderPriceTags();
     renderGrid();
     updateStats();
 
@@ -134,6 +151,7 @@ async function syncFromCloud() {
             normalizeGifts();
             renderCatGrid();
             renderTags();
+            renderPriceTags();
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
@@ -143,6 +161,7 @@ async function syncFromCloud() {
             normalizeGifts();
             renderCatGrid();
             renderTags();
+            renderPriceTags();
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
@@ -334,6 +353,37 @@ function renderTags() {
     ).join("");
 }
 
+// ===== 渲染价格区间标签 =====
+function renderPriceTags() {
+    document.getElementById("price-tags").innerHTML = PRICE_RANGES.map(r =>
+        `<button class="price-tag ${r.key===currentPriceRange?'active':''}" onclick="setPriceRange('${r.key}')">${r.label}</button>`
+    ).join("");
+}
+
+function setPriceRange(range) {
+    currentPriceRange = range;
+    renderPriceTags();
+    renderGrid();
+}
+
+// ===== 排序切换 =====
+function cycleSort() {
+    const cycle = ["default", "price-asc", "price-desc"];
+    const idx = cycle.indexOf(currentSort);
+    currentSort = cycle[(idx + 1) % cycle.length];
+    const btn = document.getElementById("sort-btn");
+    const labels = {"default":"默认排序", "price-asc":"价格 ↑", "price-desc":"价格 ↓"};
+    btn.textContent = labels[currentSort];
+    btn.classList.toggle("active", currentSort !== "default");
+    renderGrid();
+}
+
+// ===== 搜索 =====
+function onSearchInput(val) {
+    searchKeyword = val.trim();
+    renderGrid();
+}
+
 function setFilter(f) {
     currentFilter = f;
     renderCatGrid();
@@ -344,21 +394,76 @@ function setFilter(f) {
 // ===== 渲染礼物列表 =====
 function renderGrid() {
     let list = [...gifts];
+
+    // 1. 分类筛选
     if (currentFilter === "已收到") list = list.filter(g => g.received);
     else if (currentFilter !== "全部") list = list.filter(g => g.cat === currentFilter);
+
+    // 2. 价格区间筛选
+    if (currentPriceRange !== "all") {
+        list = list.filter(g => {
+            const p = g.price;
+            switch (currentPriceRange) {
+                case "0-100":      return p <= 100;
+                case "100-500":    return p > 100 && p <= 500;
+                case "500-1000":   return p > 500 && p <= 1000;
+                case "1000-2000":  return p > 1000 && p <= 2000;
+                case "2000-3000":  return p > 2000 && p <= 3000;
+                case "3000-5000":  return p > 3000 && p <= 5000;
+                case "5000-10000": return p > 5000 && p <= 10000;
+                case "10000+":     return p > 10000;
+                default:           return true;
+            }
+        });
+    }
+
+    // 3. 关键词搜索
+    if (searchKeyword) {
+        const kw = searchKeyword.toLowerCase();
+        list = list.filter(g =>
+            (g.name && g.name.toLowerCase().includes(kw)) ||
+            (g.cat && g.cat.toLowerCase().includes(kw))
+        );
+    }
+
+    // 4. 排序
+    if (currentSort === "price-asc") list.sort((a, b) => a.price - b.price);
+    else if (currentSort === "price-desc") list.sort((a, b) => b.price - a.price);
+
+    // 5. 更新结果计数
+    const countEl = document.getElementById("result-count");
+    if (countEl) {
+        if (list.length === 0) {
+            countEl.textContent = "没有找到匹配的礼物";
+            countEl.classList.add("empty");
+        } else {
+            countEl.textContent = `找到 ${list.length} 件礼物`;
+            countEl.classList.remove("empty");
+        }
+    }
 
     const grid = document.getElementById("grid");
     const empty = document.getElementById("empty");
 
     if (!list.length) {
         grid.style.display = "none";
+        // 区分"完全没有礼物"和"筛选无结果"
+        const hasFilters = (currentFilter !== "全部") || (currentPriceRange !== "all") || searchKeyword;
+        if (hasFilters && gifts.length > 0) {
+            empty.querySelector(".empty-icon").textContent = "🔍";
+            empty.querySelector("div:nth-child(2)").textContent = "没有找到匹配的礼物";
+            empty.querySelector(".empty-sub").textContent = "试试调整筛选条件吧～";
+        } else {
+            empty.querySelector(".empty-icon").textContent = "🎀";
+            empty.querySelector("div:nth-child(2)").textContent = "许愿池还是空的～";
+            empty.querySelector(".empty-sub").textContent = "点右上角「管理」来添加心愿吧";
+        }
         empty.style.display = "block";
         return;
     }
 
     grid.style.display = "grid";
     grid.classList.remove("grid-admin");
-    // 管理员模式下卡片内容多，用较少列数（由CSS控制）
     empty.style.display = "none";
 
     grid.innerHTML = list.map(g => {
