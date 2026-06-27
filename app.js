@@ -369,13 +369,22 @@ function renderGrid() {
 function renderViewCard(g) {
     const link = normalizeLink(g.link);
     const hasLink = link && link.trim();
-    const showAppBtn = hasLink && isAppLinkable(link) && /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent || "");
-    const buyBtn = hasLink
-        ? `<button type="button" class="card-buy-btn" onclick="window.open('${esc(link)}', '_blank')">去购买 🛒</button>`
-        : `<span class="card-no-link">暂无链接</span>`;
-    const appBtn = showAppBtn
-        ? `<button type="button" class="card-app-btn" onclick="openAppOrWeb('${esc(link)}')">在App打开</button>`
-        : "";
+    const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent || "");
+    const useAppOpen = hasLink && isMobile && isAppLinkable(link);
+
+    // 用 <a> 标签代替 window.open，不会被弹窗拦截器阻止
+    let buyBtn;
+    if (hasLink) {
+        if (useAppOpen) {
+            // 手机端电商链接：点击时先尝试唤起App，同时 <a> 保证网页一定能打开
+            buyBtn = `<a href="${esc(link)}" target="_blank" rel="noopener" class="card-buy-btn" onclick="return tryOpenApp(this)">去购买 🛒</a>`;
+        } else {
+            buyBtn = `<a href="${esc(link)}" target="_blank" rel="noopener" class="card-buy-btn">去购买 🛒</a>`;
+        }
+    } else {
+        buyBtn = `<span class="card-no-link">暂无链接</span>`;
+    }
+
     const recvBadge = g.received ? `<div class="badge">✅ 已收到</div>` : "";
     
     // 图片HTML - 添加懒加载
@@ -398,7 +407,6 @@ function renderViewCard(g) {
                 <div class="card-price">¥${g.price.toLocaleString()}</div>
                 ${buyBtn}
             </div>
-            ${appBtn}
         </div>
     </div>`;
 }
@@ -446,7 +454,7 @@ function renderEditableCard(g) {
             <input type="text" class="inline-input inline-link" value="${esc(g.link||'')}" placeholder="购买链接（淘宝/京东等）"
                 onblur="inlineUpdate(${g.id}, 'link', this.value.trim())">
             <div class="card-bottom">
-                ${normalizeLink(g.link) ? `<button type="button" class="card-buy-btn" onclick="openAppOrWeb('${esc(normalizeLink(g.link))}')">🛒 测试链接</button>` : `<span class="card-no-link">未设置链接</span>`}
+                ${normalizeLink(g.link) ? `<a href="${esc(normalizeLink(g.link))}" target="_blank" rel="noopener" class="card-buy-btn" onclick="return tryOpenApp(this)">🛒 测试链接</a>` : `<span class="card-no-link">未设置链接</span>`}
                 <span class="inline-saved" id="saved-${g.id}">✓ 已保存</span>
             </div>
         </div>
@@ -880,38 +888,76 @@ function isAppLinkable(url) {
     return /(e\.tb\.cn|m\.tb\.cn|item\.taobao|s\.click\.taobao|tmall|tb\.cn|jd\.com|3\.cn|jingdong)/i.test(url);
 }
 
-// 手机端尝试唤起 App，失败则回退到网页链接
+// 根据网页链接生成对应的 App scheme URL
+function buildAppUrl(url) {
+    const ua = navigator.userAgent || "";
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+
+    if (/e\.tb\.cn|m\.tb\.cn|item\.taobao|s\.click\.taobao|tmall|tb\.cn/i.test(url)) {
+        return `tbopen://m.taobao.com/tbopen/index.html?action=ali.open.nav&module=h5&url=${encodeURIComponent(url)}`;
+    } else if (/jd\.com|3\.cn|jingdong/i.test(url)) {
+        if (isIOS) {
+            return `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))}`;
+        } else if (isAndroid) {
+            return `intent://#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))};end`;
+        }
+    }
+    return "";
+}
+
+// 手机端：配合 <a> 标签使用，尝试唤起App的同时让链接正常打开
+// 返回 true 让 <a> 的默认行为（打开网页）继续执行
+function tryOpenApp(el) {
+    const url = el.getAttribute("href");
+    if (!url) return true;
+
+    const ua = navigator.userAgent || "";
+    const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
+    if (!isMobile || !isAppLinkable(url)) return true;
+
+    const appUrl = buildAppUrl(url);
+    if (appUrl) {
+        // 用隐藏 iframe 尝试唤起 App，不会影响当前页面
+        try {
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            iframe.src = appUrl;
+            document.body.appendChild(iframe);
+            // 2秒后清理 iframe
+            setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 2000);
+        } catch (e) { /* 忽略 */ }
+    }
+    // 返回 true → <a> 标签继续打开网页链接
+    // 如果 App 成功唤起，用户会看到 App；网页标签页也会打开但不影响
+    return true;
+}
+
+// 管理模式测试链接：尝试唤起App，失败则跳转网页
 function openAppOrWeb(url) {
     if (!url) return;
     const ua = navigator.userAgent || "";
     const isMobile = /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
-    const isAndroid = /Android/i.test(ua);
 
     if (!isMobile || !isAppLinkable(url)) {
-        window.open(url, "_blank");
+        // 桌面端：用 <a> 方式打开
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
         return;
     }
 
-    let appUrl = "";
-    if (/e\.tb\.cn|m\.tb\.cn|item\.taobao|s\.click\.taobao|tmall|tb\.cn/i.test(url)) {
-        // 淘宝/天猫：尝试 tbopen 通用 scheme，把目标网页传进去
-        appUrl = `tbopen://m.taobao.com/tbopen/index.html?action=ali.open.nav&module=h5&url=${encodeURIComponent(url)}`;
-    } else if (/jd\.com|3\.cn|jingdong/i.test(url)) {
-        // 京东
-        if (isIOS) {
-            appUrl = `openapp.jdmobile://virtual?params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))}`;
-        } else if (isAndroid) {
-            appUrl = `intent://#Intent;scheme=openapp.jdmobile;package=com.jingdong.app.mall;S.params=${encodeURIComponent(JSON.stringify({des: "m", url: url}))};end`;
-        }
-    }
-
+    const appUrl = buildAppUrl(url);
     if (!appUrl) {
-        window.open(url, "_blank");
+        window.location.href = url;
         return;
     }
 
-    // 尝试唤起 App（用 iframe 避免当前页直接跳转）
+    // 尝试唤起 App
     const start = Date.now();
     let iframe;
     try {
@@ -920,14 +966,16 @@ function openAppOrWeb(url) {
         iframe.src = appUrl;
         document.body.appendChild(iframe);
     } catch (e) {
-        window.location.href = appUrl;
+        window.location.href = url;
+        return;
     }
 
-    // 1.5 秒后若未离开页面，则回退到网页链接
+    // 1.5 秒后若未离开页面，App 未打开 → 跳转网页
+    // 注意：用 location.href 而非 window.open，因为 setTimeout 内的 window.open 会被弹窗拦截器阻止
     setTimeout(() => {
         if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
         if (Date.now() - start < 1600) {
-            window.open(url, "_blank");
+            window.location.href = url;
         }
     }, 1500);
 }
