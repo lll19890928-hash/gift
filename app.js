@@ -26,11 +26,25 @@ document.addEventListener("DOMContentLoaded", async () => {
 // ===== Supabase =====
 function initSupabase() {
     try {
-        if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+            window.__syncErr = "未配置 Supabase URL/Key";
+            supabase = null;
+            return;
+        }
+        // 兼容不同 CDN 的全局变量名
+        const clientFactory = window.supabase?.createClient || window.createClient;
+        if (!clientFactory) {
+            window.__syncErr = "Supabase SDK 未加载（检查网络）";
+            supabase = null;
+            return;
+        }
+        supabase = clientFactory(SUPABASE_URL, SUPABASE_KEY);
+        if (!supabase) {
+            window.__syncErr = "Supabase 客户端创建失败";
         }
     } catch (e) {
         console.error("Supabase 初始化失败", e);
+        window.__syncErr = "初始化错误: " + (e.message || e);
         supabase = null;
     }
 }
@@ -94,7 +108,11 @@ async function loadGifts() {
             if (d) gifts = JSON.parse(d);
         } catch (e) {}
         if (!gifts.length) gifts = getDefaultGifts();
-        setSyncStatus(supabase ? "offline" : "error", supabase ? "离线模式（使用本地缓存）" : "未配置云端同步");
+        if (!supabase) {
+            setSyncStatus("error", window.__syncErr || "云端同步未启用");
+        } else {
+            setSyncStatus("offline", "离线模式（使用本地缓存）");
+        }
     } else {
         setSyncStatus("synced");
         // 本地也存一份作为缓存
