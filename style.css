@@ -404,10 +404,26 @@ body {
 .btn-primary { flex:1; min-width:100px; padding:14px; background:linear-gradient(135deg,#ff7ba0,#ff9ec3); color:#fff; border:none; border-radius:16px; font-size:clamp(13px, 2vw, 17px); font-weight:700; cursor:pointer; font-family:inherit; box-shadow:0 3px 12px rgba(255,107,138,0.25); }
 .btn-primary:active { transform:scale(0.97); }
 
-/* ===== 底部感谢语 ===== */
+/* ===== 感谢语横幅（顶部） ===== */
+.thanks-banner {
+    background: linear-gradient(135deg, #fff5f8, #ffe8f0);
+    padding: 10px 16px;
+    text-align: center;
+    font-size: clamp(12px, 2vw, 15px);
+    color: #c4687a;
+    font-weight: 600;
+    border-bottom: 1px solid #fce4ec;
+    line-height: 1.5;
+}
+.thanks-banner-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* ===== 底部感谢语（简化版） ===== */
 .footer-thanks {
     text-align:center;
-    padding: clamp(20px, 4vw, 44px) clamp(14px, 3vw, 32px) clamp(16px, 3vw, 36px);
+    padding: clamp(16px, 3vw, 32px) clamp(14px, 3vw, 32px);
     margin: clamp(12px, 2vw, 28px) clamp(8px, 2vw, 24px) 0;
     background: linear-gradient(135deg, #fff, #fff5f8);
     border-radius: 24px;
@@ -426,13 +442,6 @@ body {
     line-height: 2;
     color: #c4687a;
     font-weight: 600;
-}
-.thanks-sub {
-    display: inline-block;
-    margin-top: 8px;
-    font-size: clamp(11px, 1.5vw, 14px);
-    color: #e0a0b8;
-    font-weight: 500;
 }
 
 /* ===== Toast ===== */

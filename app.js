@@ -1,6 +1,8 @@
 // ===== 配置 =====
 const ADMIN_PWD = "8888";
 const STORAGE_KEY = "gift_wishlist_data";
+const IMAGE_QUALITY = 0.6; // 图片压缩质量（0.6 = 60%品质）
+const IMAGE_MAX_WIDTH = 400; // 图片最大宽度（像素）
 
 // ===== 数据 =====
 let gifts = [];
@@ -200,22 +202,26 @@ function renderGrid() {
     }).join("");
 }
 
-// ===== 普通浏览卡片 =====
 function renderViewCard(g) {
     const hasLink = g.link && g.link.trim();
     const buyBtn = hasLink
         ? `<a href="${esc(g.link)}" target="_blank" rel="noopener noreferrer" class="card-buy-btn">去购买 🛒</a>`
         : `<span class="card-no-link">暂无链接</span>`;
     const recvBadge = g.received ? `<div class="badge">✅ 已收到</div>` : "";
-
+    
+    // 图片HTML - 添加懒加载
+    let imgHtml = "";
+    if (g.image) {
+        imgHtml = `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`;
+    } else {
+        imgHtml = `<div class="card-emoji">${getEmoji(g.cat)}</div>`;
+    }
+    
     return `
     <div class="card ${g.received?'received':''}">
         ${recvBadge}
         <div class="card-img-wrap">
-            ${g.image
-                ? `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" onerror="this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`
-                : `<div class="card-emoji">${getEmoji(g.cat)}</div>`
-            }
+            ${imgHtml}
         </div>
         <div class="card-body">
             <div class="card-name">${esc(g.name)}</div>
@@ -230,7 +236,7 @@ function renderViewCard(g) {
 // ===== 管理员模式卡片（直接编辑） =====
 function renderEditableCard(g) {
     const imgHtml = g.image
-        ? `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" onerror="this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`
+        ? `<img src="${esc(g.image)}" alt="${esc(g.name)}" class="card-img" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'card-emoji\\'>${getEmoji(g.cat)}</div>'">`
         : `<div class="card-emoji">${getEmoji(g.cat)}</div>`;
 
     return `
@@ -315,11 +321,12 @@ function inlineChangeImage(id, event) {
         img.onload = function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
-            if (w > 600) { h = h * 600 / w; w = 600; }
+            // 优化：缩小图片尺寸
+            if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
             canvas.width = w;
             canvas.height = h;
             canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+            const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             const g = gifts.find(x => x.id === id);
             if (!g) return;
             g.image = dataUrl;
@@ -349,7 +356,6 @@ function deleteGift(id) {
     showToast("已删除");
 }
 
-// ===== 新礼物图片上传 =====
 function handleNewImage(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -360,13 +366,14 @@ function handleNewImage(event) {
         img.onload = function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
-            if (w > 600) { h = h * 600 / w; w = 600; }
+            // 优化：缩小图片尺寸，减少质量
+            if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
             canvas.width = w;
             canvas.height = h;
             canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+            const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             document.getElementById("edit-image").value = dataUrl;
-            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
+            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img" loading="lazy">`;
         };
         img.src = imgData;
     };
@@ -516,14 +523,15 @@ async function setOcrImage(imageData) {
                 canvas.height = cropH;
                 canvas.getContext("2d").drawImage(img, 0, cropTop, w, cropH, 0, 0, w, cropH);
             } else {
-                if (w > 500) { h = h * 500 / w; w = 500; }
+                // 优化：缩小图片尺寸
+                if (w > IMAGE_MAX_WIDTH) { h = h * IMAGE_MAX_WIDTH / w; w = IMAGE_MAX_WIDTH; }
                 canvas.width = w;
                 canvas.height = h;
                 canvas.getContext("2d").drawImage(img, 0, 0, w, h);
             }
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+            const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_QUALITY);
             document.getElementById("edit-image").value = dataUrl;
-            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img">`;
+            document.getElementById("image-preview").innerHTML = `<img src="${dataUrl}" class="preview-img" loading="lazy">`;
             resolve();
         };
         img.src = imageData;
