@@ -11,7 +11,6 @@ let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
 let syncStatus = "loading"; // loading | synced | offline | error
-let sb = null; // Supabase 客户端实例（避免与 SDK 全局变量 supabase 冲突）
 
 // ===== 调试日志（仅控制台，不显示在页面） =====
 function debugLog(step, detail, isError) {
@@ -33,86 +32,43 @@ window.addEventListener("unhandledrejection", function(e) {
     console.error("[未处理Promise拒绝]", (e.reason && e.reason.message) || e.reason);
 });
 
-// ===== 等待外部 SDK 加载 =====
-function waitForSupabase(maxMs = 8000) {
-    return new Promise(resolve => {
-        const hasSdk = (typeof supabase !== "undefined" && supabase && supabase.createClient) ||
-                       (typeof createClient !== "undefined" && createClient);
-        if (hasSdk) return resolve();
-        let attempts = 0;
-        const interval = 100;
-        const timer = setInterval(() => {
-            const hasSdkNow = (typeof supabase !== "undefined" && supabase && supabase.createClient) ||
-                              (typeof createClient !== "undefined" && createClient);
-            if (hasSdkNow) {
-                clearInterval(timer);
-                return resolve();
-            }
-            attempts++;
-            if (attempts * interval >= maxMs) {
-                clearInterval(timer);
-                debugLog("waitForSupabase", "等待Supabase SDK超时", true);
-                resolve();
-            }
-        }, interval);
+// ===== Supabase REST API（不依赖 SDK，直接用 fetch） =====
+const SB_REST = SUPABASE_URL + "/rest/v1/wishlist";
+const SB_HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": "Bearer " + SUPABASE_KEY,
+    "Content-Type": "application/json"
+};
+
+// 带超时的 fetch
+function fetchWithTimeout(url, options, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error("连接云端超时"));
+        }, timeoutMs || 8000);
+        fetch(url, { ...options, signal: controller.signal })
+            .then(resolve)
+            .catch(reject)
+            .finally(() => clearTimeout(timer));
     });
 }
 
 // ===== 初始化 =====
 document.addEventListener("DOMContentLoaded", async () => {
-    debugLog("DOMContentLoaded", "页面初始化开始");
-    // 1. 先立即从本地加载并渲染，避免页面白屏/卡死（不依赖外部CDN）
+    // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
     loadLocalGifts();
-    debugLog("本地礼物数", gifts.length);
     renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
-    debugLog("首屏渲染完成", "");
 
-    // 2. 等待 Supabase SDK 加载后再初始化云端同步
-    debugLog("等待Supabase SDK", "最多8秒...");
-    await waitForSupabase();
-    initSupabase();
-    debugLog("Supabase初始化后", sb ? "成功" : (window.__syncErr || "失败"));
-
-    // 3. 后台尝试从云端同步（不阻塞首屏）
-    if (sb) {
-        debugLog("开始云端同步", "");
-        syncFromCloud();
-    } else {
-        debugLog("跳过云端同步", "SDK未加载或初始化失败", true);
-        setSyncStatus("offline", "离线模式（外部脚本未加载）");
-    }
+    // 2. 直接用 fetch 连接云端（不需要加载任何外部 SDK）
+    syncFromCloud();
 });
 
-// ===== Supabase =====
-function initSupabase() {
-    try {
-        if (!SUPABASE_URL || !SUPABASE_KEY) {
-            window.__syncErr = "未配置 Supabase URL/Key";
-            sb = null;
-            return;
-        }
-        // 兼容不同加载方式：本地UMD会创建全局 `supabase`，ESM可能创建 `createClient`
-        const sdkGlobal = (typeof supabase !== "undefined" && supabase) ? supabase : null;
-        const clientFactory = (sdkGlobal && sdkGlobal.createClient) || (typeof createClient !== "undefined" && createClient);
-        if (!clientFactory) {
-            window.__syncErr = "Supabase SDK 未加载（检查网络）";
-            sb = null;
-            return;
-        }
-        sb = clientFactory(SUPABASE_URL, SUPABASE_KEY);
-        if (!sb) {
-            window.__syncErr = "Supabase 客户端创建失败";
-        }
-    } catch (e) {
-        console.error("Supabase 初始化失败", e);
-        window.__syncErr = "初始化错误: " + (e.message || e);
-        sb = null;
-    }
-}
-
+// ===== 云端同步（直接用 fetch REST API，不依赖 SDK） =====
 function setSyncStatus(status, msg) {
     syncStatus = status;
     const bar = document.getElementById("sync-bar");
@@ -137,7 +93,6 @@ function loadLocalGifts() {
     let loaded = false;
     try {
         const d = localStorage.getItem(STORAGE_KEY);
-        console.log("[loadLocalGifts] localStorage data:", d ? d.substring(0, 100) : "empty");
         if (d) {
             const parsed = JSON.parse(d);
             if (Array.isArray(parsed) && parsed.length > 0) {
@@ -149,52 +104,32 @@ function loadLocalGifts() {
         console.error("[loadLocalGifts] parse error:", e);
     }
     if (!loaded || !gifts.length) {
-        console.log("[loadLocalGifts] using default gifts");
         gifts = getDefaultGifts();
     }
     normalizeGifts();
-    console.log("[loadLocalGifts] final gifts count:", gifts.length);
 }
 
 async function syncFromCloud() {
-    if (!sb) {
-        debugLog("syncFromCloud", "sb未初始化: " + (window.__syncErr || "未知"), true);
-        setSyncStatus("error", window.__syncErr || "云端同步未启用");
-        return;
-    }
     setSyncStatus("loading", "正在连接云端...");
-    debugLog("syncFromCloud", "开始请求云端数据");
     try {
-        // 5 秒超时，避免网络卡住导致页面一直 loading
-        const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("连接云端超时")), 5000)
+        // 从云端读取数据（GET /rest/v1/wishlist?id=eq.1&select=data）
+        const resp = await fetchWithTimeout(
+            SB_REST + "?id=eq.1&select=data",
+            { method: "GET", headers: SB_HEADERS },
+            8000
         );
-        const fetchCloud = sb.from("wishlist").select("data").eq("id", 1).single();
-        debugLog("syncFromCloud", "已发送请求，等待响应...");
-        const { data, error } = await Promise.race([fetchCloud, timeout]);
-        debugLog("syncFromCloud响应", "error=" + (error ? (error.code + " " + error.message) : "null") + ", data=" + (data ? typeof data : "null"));
 
-        if (error) {
-            // 没有记录（PGRST116）时把默认数据上传到云端
-            if (error.code === "PGRST116" || (error.message && error.message.includes("0 rows"))) {
-                debugLog("syncFromCloud", "云端无记录，准备上传默认数据");
-                const defaults = getDefaultGifts();
-                const { error: upErr } = await sb.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() }, { onConflict: "id" });
-                if (upErr) throw upErr;
-                gifts = defaults;
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
-                normalizeGifts();
-                renderCatGrid();
-                renderTags();
-                renderGrid();
-                updateStats();
-                setSyncStatus("synced", "已同步到云端");
-                debugLog("syncFromCloud", "默认数据已上传并显示");
-            } else {
-                throw error;
-            }
-        } else if (data && Array.isArray(data.data)) {
-            gifts = data.data;
+        if (!resp.ok) {
+            throw new Error("云端返回错误: " + resp.status);
+        }
+
+        const rows = await resp.json();
+
+        if (!rows || rows.length === 0) {
+            // 云端无记录，上传默认数据
+            const defaults = getDefaultGifts();
+            await saveToCloud(defaults);
+            gifts = defaults;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
             normalizeGifts();
             renderCatGrid();
@@ -202,15 +137,44 @@ async function syncFromCloud() {
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
-            debugLog("syncFromCloud", "云端数据已加载，礼物数=" + gifts.length);
+        } else if (rows[0].data && Array.isArray(rows[0].data)) {
+            gifts = rows[0].data;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+            normalizeGifts();
+            renderCatGrid();
+            renderTags();
+            renderGrid();
+            updateStats();
+            setSyncStatus("synced", "已同步到云端");
         } else {
-            throw new Error("云端数据格式异常: " + JSON.stringify(data).slice(0, 100));
+            throw new Error("云端数据格式异常");
         }
     } catch (e) {
         console.error("云端同步失败", e);
-        debugLog("syncFromCloud错误", (e && e.message) || e, true);
-        window.__syncErr = e.message || "云端同步失败";
         setSyncStatus("offline", "离线模式（使用本地缓存）");
+    }
+}
+
+// 写入云端（UPSERT）
+async function saveToCloud(data) {
+    const resp = await fetchWithTimeout(
+        SB_REST,
+        {
+            method: "POST",
+            headers: {
+                ...SB_HEADERS,
+                "Prefer": "resolution=merge-duplicates,return=minimal"
+            },
+            body: JSON.stringify({
+                id: 1,
+                data: data,
+                updated_at: new Date().toISOString()
+            })
+        },
+        8000
+    );
+    if (!resp.ok && resp.status !== 201) {
+        throw new Error("云端保存失败: " + resp.status);
     }
 }
 
@@ -226,24 +190,14 @@ async function saveGifts() {
     // 1. 先保存到本地（即时反馈）
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
 
-    // 2. 异步同步到 Supabase
-    if (sb) {
-        setSyncStatus("loading", "正在保存到云端...");
-        try {
-            const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("保存云端超时")), 5000)
-            );
-            const upsertCloud = sb
-                .from("wishlist")
-                .upsert({ id: 1, data: gifts, updated_at: new Date().toISOString() }, { onConflict: "id" });
-            const { error } = await Promise.race([upsertCloud, timeout]);
-
-            if (error) throw error;
-            setSyncStatus("synced", "已同步到云端");
-        } catch (e) {
-            console.error("云端保存失败", e);
-            setSyncStatus("error", "云端保存失败，已存到本地");
-        }
+    // 2. 异步同步到云端
+    setSyncStatus("loading", "正在保存到云端...");
+    try {
+        await saveToCloud(gifts);
+        setSyncStatus("synced", "已同步到云端");
+    } catch (e) {
+        console.error("云端保存失败", e);
+        setSyncStatus("error", "云端保存失败，已存到本地");
     }
 }
 
@@ -984,9 +938,9 @@ function esc(s) {
 }
 
 function refreshPage() {
-    setSyncStatus("loading", "正在刷新...");
-    // 强制重新加载并绕过缓存
-    location.reload();
+    setSyncStatus("loading", "正在从云端刷新...");
+    syncFromCloud();
+    showToast("已刷新 ✓");
 }
 
 function showToast(msg) {
