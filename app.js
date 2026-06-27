@@ -73,12 +73,26 @@ function setSyncStatus(status, msg) {
 }
 
 function loadLocalGifts() {
+    let loaded = false;
     try {
         const d = localStorage.getItem(STORAGE_KEY);
-        if (d) gifts = JSON.parse(d);
-    } catch (e) {}
-    if (!gifts.length) gifts = getDefaultGifts();
+        console.log("[loadLocalGifts] localStorage data:", d ? d.substring(0, 100) : "empty");
+        if (d) {
+            const parsed = JSON.parse(d);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                gifts = parsed;
+                loaded = true;
+            }
+        }
+    } catch (e) {
+        console.error("[loadLocalGifts] parse error:", e);
+    }
+    if (!loaded || !gifts.length) {
+        console.log("[loadLocalGifts] using default gifts");
+        gifts = getDefaultGifts();
+    }
     normalizeGifts();
+    console.log("[loadLocalGifts] final gifts count:", gifts.length);
 }
 
 async function syncFromCloud() {
