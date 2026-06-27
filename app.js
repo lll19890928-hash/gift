@@ -134,11 +134,14 @@ function saveNewGift() {
 function renderCatGrid() {
     const cats = [
         {key:"护肤", icon:"✨", label:"护肤美妆", color:"#fce4ec"},
-        {key:"数码", icon:"👓", label:"数码科技", color:"#e3f2fd"},
+        {key:"数码", icon:"💻", label:"数码科技", color:"#e3f2fd"},
         {key:"家电", icon:"🏠", label:"家居家电", color:"#e8f5e9"},
-        {key:"日用", icon:"📦", label:"日用好物", color:"#fff3e0"},
+        {key:"日用", icon:"🧴", label:"日用好物", color:"#fff3e0"},
         {key:"鞋包", icon:"👢", label:"鞋包配饰", color:"#f3e5f5"},
-        {key:"电子产品", icon:"📱", label:"电子产品", color:"#e0f7fa"},
+        {key:"衣服", icon:"👗", label:"衣服穿搭", color:"#fce4ec"},
+        {key:"鲜花水果", icon:"💐", label:"鲜花水果", color:"#e8f5e9"},
+        {key:"零食", icon:"🍰", label:"零食好吃", color:"#fff3e0"},
+        {key:"虚拟服务", icon:"🎮", label:"虚拟服务", color:"#e0f7fa"},
         {key:"书籍", icon:"📚", label:"书籍", color:"#e0f2f1"},
         {key:"运动", icon:"⚽", label:"运动户外", color:"#e8f5e9"},
         {key:"其他", icon:"🎁", label:"其他", color:"#fafafa"},
@@ -188,7 +191,8 @@ function renderGrid() {
     }
 
     grid.style.display = "grid";
-    grid.style.gridTemplateColumns = isAdmin ? "1fr" : "repeat(2, 1fr)";
+    grid.classList.remove("grid-admin");
+    // 管理员模式下卡片内容多，用较少列数（由CSS控制）
     empty.style.display = "none";
 
     grid.innerHTML = list.map(g => {
@@ -257,7 +261,7 @@ function renderEditableCard(g) {
                 <div class="inline-field">
                     <label>分类</label>
                     <select class="inline-input inline-cat" onchange="inlineUpdate(${g.id}, 'cat', this.value)">
-                        ${["护肤","数码","家电","日用","鞋包","电子产品","书籍","运动","其他"].map(c =>
+                        ${["护肤","数码","家电","日用","鞋包","衣服","鲜花水果","零食","虚拟服务","书籍","运动","其他"].map(c =>
                             `<option value="${c}" ${g.cat===c?'selected':''}>${c}</option>`
                         ).join("")}
                     </select>
@@ -550,7 +554,7 @@ function quickParse() {
 
 // ===== 工具函数 =====
 function getEmoji(cat) {
-    return {"护肤":"✨","数码":"👓","电子产品":"📱","书籍":"📚","配饰":"👜","鞋包":"👢","家居":"🏠","家电":"🏠","日用":"📦","美妆":"💄","运动":"⚽","其他":"🎁"}[cat] || "🎁";
+    return {"护肤":"✨","数码":"💻","家电":"🏠","日用":"🧴","鞋包":"👢","衣服":"👗","鲜花水果":"💐","零食":"🍰","虚拟服务":"🎮","书籍":"📚","运动":"⚽","其他":"🎁"}[cat] || "🎁";
 }
 
 function esc(s) {
