@@ -620,7 +620,7 @@ function setImageFromUrl(url) {
     }
 }
 
-// ===== 图片预处理：截取下半部分文字区域 + 缩放 + 灰度 + 对比度 + 二值化 =====
+// ===== 图片预处理：只截取底部文字区域（价格+产品名） =====
 function preprocessImage(imageData) {
     return new Promise((resolve) => {
         const img = new Image();
@@ -628,19 +628,21 @@ function preprocessImage(imageData) {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
 
-            // 只截取图片下半部分（产品名称和价格在图片下方，避免产品图片上的文字干扰）
+            // 只截取图片最底部区域（淘宝/京东截图的文字都在底部）
+            // 竖图（手机截图）：底部 30%（从 70% 处开始）
+            // 横图：底部 40%（从 60% 处开始）
             let srcX = 0, srcY = 0, srcW = w, srcH = h;
-            if (h > w * 1.2) {
-                // 竖图（手机截图）：从 45% 处开始截取到底部
-                srcY = Math.round(h * 0.45);
+            if (h > w * 1.1) {
+                // 手机竖屏截图：价格在 ~78%，标题在 ~88%，截取底部 30%
+                srcY = Math.round(h * 0.68);
                 srcH = h - srcY;
             } else {
-                // 横图：从 30% 处开始
-                srcY = Math.round(h * 0.3);
+                // 横图/方图：截取底部 40%
+                srcY = Math.round(h * 0.58);
                 srcH = h - srcY;
             }
 
-            // 限制最大宽度，提高识别速度和准确率
+            // 限制最大宽度
             const maxW = 1200;
             let outW = srcW, outH = srcH;
             if (outW > maxW) { outH = Math.round(srcH * maxW / srcW); outW = maxW; }
@@ -652,13 +654,13 @@ function preprocessImage(imageData) {
             const imgData = ctx.getImageData(0, 0, outW, outH);
             const data = imgData.data;
 
-            // 灰度化 + 对比度增强 + 二值化
+            // 轻度灰度化 + 对比度增强（不使用激进二值化，保留彩色文字可读性）
             for (let i = 0; i < data.length; i += 4) {
                 const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-                const contrast = 1.6;
+                // 中等对比度增强，不做硬二值化
+                const contrast = 1.4;
                 let adjusted = ((gray - 128) * contrast) + 128;
-                // 二值化：文字更黑，背景更白
-                adjusted = adjusted > 175 ? 255 : 0;
+                adjusted = Math.max(0, Math.min(255, adjusted));
                 data[i] = data[i+1] = data[i+2] = adjusted;
             }
             ctx.putImageData(imgData, 0, 0);
@@ -719,87 +721,91 @@ async function startOcr(imageData) {
 
         const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-        // 价格提取
+        // ===== 价格提取 =====
+        // 策略：在裁切后的底部区域中，价格（¥+数字）通常出现在靠上的位置（产品名上方）
         let bestPrice = 0;
-        const lines2 = text.split("\n");
-        const totalLines = lines2.length;
+        const allText = text;
 
-        // 1. 提取带 ¥/$ 符号的价格，并记录所在行
-        let symbolPrices = [];
-        const priceRegex = /[¥￥$]\s*([\d,]+\.?\d*)/g;
-        let priceMatch;
-        while ((priceMatch = priceRegex.exec(text)) !== null) {
-            const before = text.substring(Math.max(0, priceMatch.index - 20), priceMatch.index);
-            // 过滤原价、划线价提示
-            if (/原价|划线价|门市价|专柜价|吊牌价|建议价/.test(before)) continue;
-            const lineIdx = text.substring(0, priceMatch.index).split("\n").length - 1;
-            symbolPrices.push({
-                raw: priceMatch[0],
-                value: parseFloat(priceMatch[1].replace(/,/g, "")),
-                lineIdx,
-                hasSymbol: true
-            });
-        }
-
-        // 2. 提取纯数字价格（OCR已只识别下半部分，不再按行号过滤）
-        let numPrices = [];
-        lines2.forEach((line, lineIdx) => {
-            // 过滤包含促销词的行
-            if (/原价|划线价|门市价|专柜价|吊牌价|建议价|到手价约|预估|满|减|券|折|补贴|政府|可用/.test(line)) return;
-            const nums = line.match(/\b(\d{2,5})(?:\.\d{1,2})?\b/g);
-            if (nums) {
-                nums.forEach(n => {
-                    const v = parseFloat(n);
-                    if (v >= 10 && v <= 50000) {
-                        numPrices.push({ raw: n, value: v, lineIdx, hasSymbol: false });
-                    }
-                });
+        // 第一步：找带 ¥/￥/$ 符号的价格（最可靠）
+        // 排除"原价/划线价"等前缀，优先取第一个有效的当前价格
+        const pricePatterns = [
+            /国补[^¥￥]*[¥￥]\s*([\d,]+\.?\d*)/,      // "国补后约¥4998"
+            /[¥￥]\s*([\d,]+\.?\d*)\s*(起|元)?/,       // "¥4998起"
+            /\$\s*([\d,]+\.?\d*)/,
+        ];
+        for (const pat of pricePatterns) {
+            const match = allText.match(pat);
+            if (match) {
+                const before = allText.substring(0, allText.indexOf(match[0]));
+                // 排除原价行
+                if (/原价|划线价|门市价|吊牌价|建议价|优惠前/.test(before)) continue;
+                const v = parseFloat(match[1].replace(/,/g, ""));
+                if (v >= 1 && v <= 100000) { bestPrice = Math.round(v); break; }
             }
-        });
-
-        // 3. 选择最可能的价格：优先带符号的价格；其次纯数字
-        let candidatePrices = symbolPrices.length > 0 ? symbolPrices : numPrices;
-        if (candidatePrices.length > 0) {
-            // 按行号（靠下）和数值综合排序，优先靠下的
-            candidatePrices.sort((a, b) => b.lineIdx - a.lineIdx || b.value - a.value);
-            bestPrice = Math.round(candidatePrices[0].value);
         }
 
-        // 名称提取
-        const noiseWords = /补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册|登录|包邮|运费|险|天猫|淘宝|京东|旗舰店|官方|正品|秒杀|限时|特惠|优惠|促销|满减|领券|券后|到手价|约价|预估|原价|现价|划线价|价格|¥|￥|$|官方旗舰店|已售|月销|收藏|加购|购物车|立即购买|下单|商品|详情|参数|评价|推荐|相似|精选|热门|爆款|销量|店铺|客服|首页|分类|我的|足迹/;
-        let name = "";
+        // 第二步：如果没找到带符号的，在所有行中找纯数字
+        if (!bestPrice) {
+            for (const line of lines) {
+                // 跳过明显不是价格的行
+                if (line.length > 10 && !/[¥￥$]/.test(line)) continue;
+                if (/原|划线|吊牌|建议|优惠前|满减|补贴.*%/.test(line)) continue;
+                const nums = line.match(/\b(\d{2,5})(?:\.\d{1,2})?\b/g);
+                if (nums) {
+                    const v = parseFloat(nums[0]);
+                    if (v >= 10 && v <= 50000) { bestPrice = Math.round(v); break; }
+                }
+            }
+        }
 
-        // 候选行：过滤噪音后，按长度排序
-        const candidates = lines
-            .map((line, idx) => ({ line, idx }))
-            .filter(({ line }) => {
-                if (line.length < 4 || line.length > 60) return false;
-                if (/^[\d¥￥$.,\s\-]+$/.test(line)) return false;
-                if (/^\d+%$/.test(line)) return false;
-                if (noiseWords.test(line)) return false;
-                return true;
-            })
-            .sort((a, b) => b.line.length - a.line.length);
+        // ===== 名称提取 =====
+        // 在裁切的底部区域中，产品名是最长的连续文字行，位于最底部几行
+        const noisePrefix = /^(天猫|淘宝|京东|【行业|爆款|顺丰|官方|正品|热卖|推荐)/;
+        const noiseSuffix = /(包邮|运费险|现货|发货|赠品|券|满减|折起|起售|已售|月销|评价|收藏|加入购物车|立即购买|领券|店铺|客服|万\+|人付款|\d+\.\d*万?$)/;
+        const noiseWords = /^(\d+%|[¥￥\$]|补贴|政府|可用|收货|地址|为准|保存|扫码|打开App|相册|登录)$/;
+
+        let name = "";
+        
+        // 收集候选名称行（过滤掉纯数字、纯符号、过短、过长的噪音行）
+        const candidates = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // 基本长度过滤
+            if (line.length < 5 || line.length > 80) continue;
+            // 纯数字/符号行跳过
+            if (/^[\d¥￥$.,\s\-+]+$/.test(line)) continue;
+            // 明显的噪音词
+            if (noiseWords.test(line)) continue;
+            // 过短的无意义行
+            if (noiseSuffix.test(line) && line.length < 15) continue;
+            
+            candidates.push({ line, idx: i });
+        }
 
         if (candidates.length > 0) {
-            // OCR已只识别下半部分，产品名称在前几行（紧挨产品图下方）
-            const upper = candidates.filter(c => c.idx < totalLines * 0.5);
-            name = upper.length > 0 ? upper[0].line : candidates[0].line;
-        }
-
-        // 如果没找到，放宽条件
-        if (!name) {
+            // 产品名通常是裁切区域内最长的文字行之一
+            // 优先取最长的，如果有多个差不多长的，取靠后的（更接近底部）
+            candidates.sort((a, b) => b.line.length - a.line.length);
+            const longestLen = candidates[0].line.length;
+            // 取最长的一批里最靠下的那个（产品名在最底部）
+            const topCandidates = candidates.filter(c => c.line.length >= longestLen * 0.8);
+            topCandidates.sort((a, b) => b.idx - a.idx);  // 靠后优先
+            name = topCandidates[0].line;
+        } else {
+            // 兜底：取任何看起来像文字的行
             for (const line of lines) {
-                if (line.length >= 3 && !/^[\d¥￥$.,\s]+$/.test(line)) {
+                if (line.length >= 3 && !/^[\d¥￥$.,]+$/.test(line)) {
                     name = line.substring(0, 50);
                     break;
                 }
             }
         }
 
-        // 清理名称中的噪音
+        // 清理名称
         if (name) {
             name = name.replace(/\s+/g, " ").trim();
+            // 去掉开头可能的平台标识
+            name = name.replace(/^(天猫|淘宝|京东)[\s【]*/, "");
             if (name.length > 50) name = name.substring(0, 50);
         }
 
