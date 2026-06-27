@@ -13,26 +13,24 @@ let currentFilter = "全部";
 let syncStatus = "loading"; // loading | synced | offline | error
 let sb = null; // Supabase 客户端实例（避免与 SDK 全局变量 supabase 冲突）
 
-// ===== 调试面板 =====
+// ===== 调试日志（仅控制台，不显示在页面） =====
 function debugLog(step, detail, isError) {
     try {
-        const panel = document.getElementById("debug-panel");
-        const body = document.getElementById("debug-body");
-        if (!panel || !body) return;
-        panel.style.display = "block";
-        const line = document.createElement("div");
-        line.className = "debug-line" + (isError ? " debug-error" : "");
         const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        line.textContent = `[${time}] ${step}${detail ? ": " + detail : ""}`;
-        body.appendChild(line);
+        const msg = `[${time}] ${step}${detail ? ": " + detail : ""}`;
+        if (isError) {
+            console.error("[调试]", msg);
+        } else {
+            console.log("[调试]", msg);
+        }
     } catch (e) { /* 调试代码本身不能影响主流程 */ }
 }
 
 window.onerror = function(msg, url, line, col, err) {
-    debugLog("全局错误", msg + " @" + (line || "?") + ":" + (col || "?"), true);
+    console.error("[全局错误]", msg, "@" + (line || "?") + ":" + (col || "?"));
 };
 window.addEventListener("unhandledrejection", function(e) {
-    debugLog("未处理Promise拒绝", (e.reason && e.reason.message) || e.reason, true);
+    console.error("[未处理Promise拒绝]", (e.reason && e.reason.message) || e.reason);
 });
 
 // ===== 等待外部 SDK 加载 =====
