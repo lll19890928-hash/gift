@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>我的礼物愿望单</title>
+    <title>lily酱的许愿池 ✨</title>
     <link rel="stylesheet" href="style.css">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,7 +13,10 @@
 <body>
     <header class="top-bar">
         <div class="top-inner">
-            <h1>🎁 我的礼物愿望单</h1>
+            <div class="title-wrap">
+                <h1>lily酱的许愿池 🎀</h1>
+                <div class="subtitle">每一个小心愿 都值得被看见 ♡</div>
+            </div>
             <div class="top-btns" id="top-btns">
                 <button class="btn-admin" id="btn-admin" onclick="toggleAdmin()">管理</button>
             </div>
@@ -120,9 +123,20 @@
 
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" style="display:none;">
-        <div class="empty-icon">🎁</div>
-        <div>暂无礼物</div>
-        <div class="empty-sub">点右上角「管理」添加</div>
+        <div class="empty-icon">🎀</div>
+        <div>许愿池还是空的～</div>
+        <div class="empty-sub">点右上角「管理」来添加心愿吧</div>
+    </div>
+
+    <!-- 底部感谢语 -->
+    <div class="footer-thanks">
+        <div class="thanks-deco">✿ ❀ ✿ ❀ ✿</div>
+        <div class="thanks-text">
+            谢谢你来逛 lily酱的许愿池 💕<br>
+            你的每一份心意 lily酱都记在心里 ♡<br>
+            <span class="thanks-sub">—— 感恩遇见 感谢有你 ——</span>
+        </div>
+        <div class="thanks-deco">✿ ❀ ✿ ❀ ✿</div>
     </div>
 
     <div class="toast" id="toast"></div>
