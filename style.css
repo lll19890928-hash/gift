@@ -555,3 +555,95 @@ body {
     max-width: 90vw;
 }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ===== 搜索 & 排序工具栏 ===== */
+.filter-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 8px clamp(12px, 2vw, 24px);
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: center;
+}
+.search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 16px;
+    border: 2px solid #fce0ec;
+    border-radius: 20px;
+    font-size: clamp(13px, 2vw, 16px);
+    outline: none;
+    background: #fff;
+    font-family: inherit;
+    -webkit-appearance: none;
+    color: #4a2c3a;
+}
+.search-input:focus { border-color: #ff9ec3; }
+.search-input::placeholder { color: #e0b8c8; }
+.sort-btn {
+    flex-shrink: 0;
+    padding: 10px clamp(12px, 2vw, 18px);
+    background: #fff;
+    border: 2px solid #fce0ec;
+    border-radius: 20px;
+    font-size: clamp(12px, 1.8vw, 15px);
+    font-weight: 600;
+    color: #c0488;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+.sort-btn.active {
+    background: linear-gradient(135deg, #ff7ba0, #ff9ec3);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 2px 10px rgba(255,107,138,0.25);
+}
+.sort-btn:active { transform: scale(0.95); }
+
+/* ===== 价格区间标签 ===== */
+.price-tags {
+    display: flex;
+    gap: 8px;
+    padding: 4px clamp(12px, 2vw, 24px) 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 1400px;
+    margin: 0 auto;
+    scrollbar-width: none;
+}
+.price-tags::-webkit-scrollbar { display: none; }
+.price-tag {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    background: #fff;
+    border: 1.5px solid #fce0ec;
+    border-radius: 16px;
+    font-size: clamp(11px, 1.5vw, 14px);
+    color: #8a5a6e;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.price-tag:active { transform: scale(0.93); }
+.price-tag.active {
+    background: linear-gradient(135deg, #ffb6d1, #ffc8dd);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 2px 8px rgba(255,107,138,0.2);
+}
+
+/* ===== 筛选结果计数 ===== */
+.result-count {
+    text-align: center;
+    padding: 2px 16px 6px;
+    font-size: clamp(11px, 1.5vw, 13px);
+    color: #c0488;
+    font-weight: 600;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+.result-count.empty { color: #e0a0b0; }
