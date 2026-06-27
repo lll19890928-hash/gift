@@ -460,7 +460,7 @@ function renderEditableCard(g) {
         <div class="card-edit-toolbar">
             <label class="card-recv-toggle">
                 <input type="checkbox" ${g.received?'checked':''} onchange="inlineToggleRecv(${g.id}, this.checked)">
-                <span>${g.received?'✅ 已收到':'☐ 未收到'}</span>
+                <span>${g.received?'✅ 已收到':'已收到'}</span>
             </label>
             <button class="card-del-btn" onclick="deleteGift(${g.id})">🗑️ 删除</button>
         </div>
@@ -975,6 +975,12 @@ function openAppOrWeb(url) {
 function esc(s) {
     if (!s) return "";
     return s.toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+function refreshPage() {
+    setSyncStatus("loading", "正在刷新...");
+    // 强制重新加载并绕过缓存
+    location.reload();
 }
 
 function showToast(msg) {
