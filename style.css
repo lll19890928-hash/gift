@@ -138,6 +138,17 @@ body {
 .sync-offline { background: #f5f5f5; color: #757575; }
 .sync-error { background: #ffebee; color: #e53935; }
 #sync-icon { font-size: 13px; }
+.btn-refresh {
+    background: none;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 50%;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 14px;
+    margin-left: auto;
+    transition: transform 0.3s, border-color 0.2s;
+}
+.btn-refresh:hover { transform: rotate(180deg); border-color: #ff6b8a; }
 
 /* ===== 添加新礼物表单 ===== */
 .add-form-wrap { background: #fff; margin: 0; border-bottom: 2px solid #ff8eb4; }
