@@ -9,6 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#ff6b8a">
     <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
     <header class="top-bar">
@@ -30,6 +31,12 @@
             <br>为了让你不纠结，让礼物送到我的心坎上，我准备了这个网站 ♡
             <br><span class="thanks-highlight">礼物不在于价格，而在于合适 ～ 挑选你的心意，让我感受你的温暖 🎀</span>
         </div>
+    </div>
+
+    <!-- 同步状态提示 -->
+    <div class="sync-bar" id="sync-bar">
+        <span id="sync-icon">⏳</span>
+        <span id="sync-text">正在连接云端...</span>
     </div>
 
     <!-- 管理员登录行（内联，非弹窗） -->

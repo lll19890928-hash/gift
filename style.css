@@ -121,6 +121,24 @@ body {
     white-space: nowrap;
 }
 
+/* ===== 同步状态条 ===== */
+.sync-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: clamp(11px, 1.8vw, 13px);
+    font-weight: 600;
+    border-bottom: 1px solid #fce4ec;
+    transition: all 0.3s ease;
+}
+.sync-loading { background: #fff8e1; color: #f5a623; }
+.sync-synced { background: #e8f5e9; color: #43a047; }
+.sync-offline { background: #f5f5f5; color: #757575; }
+.sync-error { background: #ffebee; color: #e53935; }
+#sync-icon { font-size: 13px; }
+
 /* ===== 添加新礼物表单 ===== */
 .add-form-wrap { background: #fff; margin: 0; border-bottom: 2px solid #ff8eb4; }
 .add-form-inner { padding: clamp(14px, 3vw, 28px); max-width: 600px; margin: 0 auto; }

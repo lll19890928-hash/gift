@@ -3,37 +3,131 @@ const ADMIN_PWD = "8888";
 const STORAGE_KEY = "gift_wishlist_data";
 const IMAGE_QUALITY = 0.6; // 图片压缩质量（0.6 = 60%品质）
 const IMAGE_MAX_WIDTH = 400; // 图片最大宽度（像素）
+const SUPABASE_URL = "https://yzbjfmuzqhybhgzxooek.supabase.co";
+const SUPABASE_KEY = "sb_publishable_rEW8nZvYGj89wGisKc9Pjw_dyNq4ZdD";
 
 // ===== 数据 =====
 let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
+let supabase = null;
+let syncStatus = "loading"; // loading | synced | offline | error
 
 // ===== 初始化 =====
-document.addEventListener("DOMContentLoaded", () => {
-    loadGifts();
+document.addEventListener("DOMContentLoaded", async () => {
+    initSupabase();
+    await loadGifts();
     renderCatGrid();
     renderTags();
     renderGrid();
     updateStats();
 });
 
-// ===== 本地存储 =====
-function loadGifts() {
+// ===== Supabase =====
+function initSupabase() {
     try {
-        const d = localStorage.getItem(STORAGE_KEY);
-        if (d) gifts = JSON.parse(d);
-    } catch(e) {}
+        if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+    } catch (e) {
+        console.error("Supabase 初始化失败", e);
+        supabase = null;
+    }
+}
+
+function setSyncStatus(status, msg) {
+    syncStatus = status;
+    const bar = document.getElementById("sync-bar");
+    const icon = document.getElementById("sync-icon");
+    const text = document.getElementById("sync-text");
+    if (!bar || !icon || !text) return;
+
+    const map = {
+        loading: { icon: "⏳", text: msg || "正在连接云端...", cls: "sync-loading" },
+        synced: { icon: "✅", text: msg || "已同步到云端", cls: "sync-synced" },
+        offline: { icon: "📴", text: msg || "离线模式（使用本地缓存）", cls: "sync-offline" },
+        error: { icon: "⚠️", text: msg || "同步失败，请检查网络", cls: "sync-error" }
+    };
+    const s = map[status] || map.loading;
+    icon.textContent = s.icon;
+    text.textContent = s.text;
+    bar.className = "sync-bar " + s.cls;
+    bar.style.display = "flex";
+}
+
+async function loadGifts() {
+    setSyncStatus("loading");
+    let cloudLoaded = false;
+
+    // 1. 尝试从 Supabase 云端读取
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from("wishlist")
+                .select("data")
+                .eq("id", 1)
+                .single();
+
+            if (error) {
+                // 没有记录（PGRST116）时创建默认数据
+                if (error.code === "PGRST116" || error.message.includes("0 rows")) {
+                    const defaults = getDefaultGifts();
+                    await supabase.from("wishlist").upsert({ id: 1, data: defaults, updated_at: new Date().toISOString() });
+                    gifts = defaults;
+                    cloudLoaded = true;
+                } else {
+                    throw error;
+                }
+            } else if (data && Array.isArray(data.data)) {
+                gifts = data.data;
+                cloudLoaded = true;
+            }
+        } catch (e) {
+            console.error("云端读取失败", e);
+        }
+    }
+
+    // 2. 云端失败或未初始化，尝试本地缓存
+    if (!cloudLoaded) {
+        try {
+            const d = localStorage.getItem(STORAGE_KEY);
+            if (d) gifts = JSON.parse(d);
+        } catch (e) {}
+        if (!gifts.length) gifts = getDefaultGifts();
+        setSyncStatus(supabase ? "offline" : "error", supabase ? "离线模式（使用本地缓存）" : "未配置云端同步");
+    } else {
+        setSyncStatus("synced");
+        // 本地也存一份作为缓存
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+    }
+
+    // 数据规范化
     gifts.forEach(g => {
         if (!g.image) g.image = "";
         if (!g.cat) g.cat = "其他";
         if (g.received === undefined) g.received = false;
     });
-    if (!gifts.length) { gifts = getDefaultGifts(); saveGifts(); }
 }
 
-function saveGifts() {
+async function saveGifts() {
+    // 1. 先保存到本地（即时反馈）
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+
+    // 2. 异步同步到 Supabase
+    if (supabase) {
+        setSyncStatus("loading", "正在保存到云端...");
+        try {
+            const { error } = await supabase
+                .from("wishlist")
+                .upsert({ id: 1, data: gifts, updated_at: new Date().toISOString() }, { onConflict: "id" });
+
+            if (error) throw error;
+            setSyncStatus("synced", "已同步到云端");
+        } catch (e) {
+            console.error("云端保存失败", e);
+            setSyncStatus("error", "云端保存失败，已存到本地");
+        }
+    }
 }
 
 function getDefaultGifts() {
@@ -114,7 +208,7 @@ function toggleAddForm() {
     }
 }
 
-function saveNewGift() {
+async function saveNewGift() {
     const name = document.getElementById("edit-name").value.trim();
     const price = parseInt(document.getElementById("edit-price").value) || 0;
     const link = normalizeLink(document.getElementById("edit-link").value);
@@ -124,7 +218,7 @@ function saveNewGift() {
     if (!name || !price) { showToast("请填写名称和价格"); return; }
 
     gifts.push({ id: Date.now(), name, price, link, image, cat, received: false });
-    saveGifts();
+    await saveGifts();
     renderCatGrid();
     renderGrid();
     updateStats();
@@ -285,13 +379,13 @@ function renderEditableCard(g) {
 }
 
 // ===== 内联更新 =====
-function inlineUpdate(id, field, value) {
+async function inlineUpdate(id, field, value) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
     if (field === "link") value = normalizeLink(value);
     if (g[field] === value) return;
     g[field] = value;
-    saveGifts();
+    await saveGifts();
     const savedEl = document.getElementById("saved-" + id);
     if (savedEl) {
         savedEl.style.opacity = "1";
@@ -303,11 +397,11 @@ function inlineUpdate(id, field, value) {
     }
 }
 
-function inlineToggleRecv(id, checked) {
+async function inlineToggleRecv(id, checked) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
     g.received = checked;
-    saveGifts();
+    await saveGifts();
     renderCatGrid();
     updateStats();
     showToast(checked ? "已标记收到 ✓" : "已标记想要");
@@ -320,7 +414,7 @@ function inlineChangeImage(id, event) {
     reader.onload = function(e) {
         const imgData = e.target.result;
         const img = new Image();
-        img.onload = function() {
+        img.onload = async function() {
             const canvas = document.createElement("canvas");
             let w = img.width, h = img.height;
             // 优化：缩小图片尺寸
@@ -332,7 +426,7 @@ function inlineChangeImage(id, event) {
             const g = gifts.find(x => x.id === id);
             if (!g) return;
             g.image = dataUrl;
-            saveGifts();
+            await saveGifts();
             renderGrid();
             showToast("图片已更新 ✓");
         };
@@ -348,10 +442,10 @@ function updateStats() {
     document.getElementById("stat-price").textContent = total.toLocaleString();
 }
 
-function deleteGift(id) {
+async function deleteGift(id) {
     if (!confirm("确定删除这个礼物？")) return;
     gifts = gifts.filter(g => g.id !== id);
-    saveGifts();
+    await saveGifts();
     renderCatGrid();
     renderGrid();
     updateStats();
