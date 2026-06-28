@@ -16,6 +16,7 @@ let searchKeyword = "";
 let syncStatus = "loading"; // loading | synced | offline | error
 let localDirty = false; // 有未同步到云端的本地修改
 let cloudSyncInProgress = false; // 云端同步是否正在进行
+let cloudPullInProgress = false; // 云端拉取是否正在进行（防止覆盖正在编辑的数据）
 
 // 价格区间定义
 const PRICE_RANGES = [
@@ -119,6 +120,8 @@ function loadLocalGifts() {
                 loaded = true;
             }
         }
+        // 恢复 localDirty 状态（跨页面刷新保持）
+        localDirty = localStorage.getItem("gift_wishlist_dirty") === "true";
     } catch (e) {
         console.error("[loadLocalGifts] parse error:", e);
     }
@@ -137,6 +140,7 @@ async function syncFromCloud() {
         return;
     }
     setSyncStatus("loading", "正在连接云端...");
+    cloudPullInProgress = true;
     try {
         // 从云端读取数据（GET /rest/v1/wishlist?id=eq.1&select=data）
         const resp = await fetchWithTimeout(
@@ -151,10 +155,17 @@ async function syncFromCloud() {
 
         const rows = await resp.json();
 
+        // ★ 关键：fetch 期间用户可能添加了礼物，再次检查 localDirty
+        if (localDirty) {
+            console.log("[syncFromCloud] fetch 期间本地有修改，跳过覆盖，改为推送本地数据");
+            cloudPullInProgress = false;
+            saveGifts();
+            return;
+        }
+
         if (!rows || rows.length === 0) {
             // 云端无记录，上传默认数据
             const defaults = getDefaultGifts();
-            await saveToCloud(defaults);
             gifts = defaults;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
             normalizeGifts();
@@ -164,9 +175,25 @@ async function syncFromCloud() {
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
+            // 上传到云端
+            saveGifts();
         } else if (rows[0].data && Array.isArray(rows[0].data)) {
-            gifts = rows[0].data;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+            const cloudData = rows[0].data;
+            // ★ 合并策略：保留本地有但云端没有的礼物（按 ID 去重）
+            const cloudIds = new Set(cloudData.map(g => g.id));
+            const localOnly = gifts.filter(g => !cloudIds.has(g.id));
+            if (localOnly.length > 0) {
+                console.log(`[syncFromCloud] 本地有 ${localOnly.length} 个云端没有的礼物，合并`);
+                gifts = [...cloudData, ...localOnly];
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+                localDirty = true;
+                localStorage.setItem("gift_wishlist_dirty", "true");
+                // 推送合并后的数据到云端
+                saveGifts();
+            } else {
+                gifts = cloudData;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+            }
             normalizeGifts();
             renderCatGrid();
             renderTags();
@@ -181,6 +208,7 @@ async function syncFromCloud() {
         console.error("云端同步失败", e);
         setSyncStatus("offline", "离线模式（使用本地缓存）");
     }
+    cloudPullInProgress = false;
 }
 
 // 写入云端（UPSERT）—— 超时设为 20 秒，因为数据含 base64 图片可能较大
@@ -218,6 +246,7 @@ async function saveGifts() {
     // 1. 先保存到本地（即时反馈，同步操作）
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
     localDirty = true;
+    localStorage.setItem("gift_wishlist_dirty", "true"); // 持久化 dirty 状态
 
     // 2. 后台同步到云端（不阻塞调用方）
     //    如果已有同步在进行中，标记需要再次同步
@@ -235,6 +264,7 @@ async function saveGifts() {
             try {
                 await saveToCloud(gifts);
                 localDirty = false;
+                localStorage.setItem("gift_wishlist_dirty", "false"); // 清除 dirty
                 setSyncStatus("synced", "已同步到云端");
                 console.log("[saveGifts] 云端保存成功");
                 break;
@@ -1129,6 +1159,9 @@ function esc(s) {
 }
 
 function refreshPage() {
+    // 强制从云端刷新：清除 dirty 标志，重新拉取
+    localDirty = false;
+    localStorage.setItem("gift_wishlist_dirty", "false");
     setSyncStatus("loading", "正在从云端刷新...");
     syncFromCloud();
     showToast("已刷新 ✓");
