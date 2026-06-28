@@ -142,11 +142,11 @@ async function syncFromCloud() {
     setSyncStatus("loading", "正在连接云端...");
     cloudPullInProgress = true;
     try {
-        // 从云端读取数据（GET /rest/v1/wishlist?id=eq.1&select=data）
+        // 从云端读取数据（GET 超时 15 秒，适应手机慢网络 + 大数据量）
         const resp = await fetchWithTimeout(
             SB_REST + "?id=eq.1&select=data",
             { method: "GET", headers: SB_HEADERS },
-            8000
+            15000
         );
 
         if (!resp.ok) {
@@ -175,25 +175,31 @@ async function syncFromCloud() {
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
-            // 上传到云端
             saveGifts();
         } else if (rows[0].data && Array.isArray(rows[0].data)) {
             const cloudData = rows[0].data;
-            // ★ 合并策略：保留本地有但云端没有的礼物（按 ID 去重）
-            const cloudIds = new Set(cloudData.map(g => g.id));
-            const localOnly = gifts.filter(g => !cloudIds.has(g.id));
-            if (localOnly.length > 0) {
-                console.log(`[syncFromCloud] 本地有 ${localOnly.length} 个云端没有的礼物，合并`);
-                gifts = [...cloudData, ...localOnly];
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
-                localDirty = true;
-                localStorage.setItem("gift_wishlist_dirty", "true");
-                // 推送合并后的数据到云端
-                saveGifts();
-            } else {
-                gifts = cloudData;
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+
+            // ★★★ 核心修复：永远合并不替换 ★★★
+            // 策略：本地数据优先，只添加云端有但本地没有的礼物
+            // 这样本地修改永远不会被云端旧数据覆盖
+            const localIds = new Set(gifts.map(g => g.id));
+            const cloudOnly = cloudData.filter(g => !localIds.has(g.id));
+            let changed = false;
+
+            if (cloudOnly.length > 0) {
+                console.log("[syncFromCloud] 云端有 " + cloudOnly.length + " 个本地没有的礼物，合并进来");
+                gifts = [...gifts, ...cloudOnly];
+                changed = true;
             }
+
+            // 检查本地是否有云端已删除的礼物（云端数量明显少很多时才处理）
+            // 注意：不主动删除本地礼物，因为可能是云端同步失败导致数据不全
+            if (cloudData.length > 0 && gifts.length > cloudData.length + 5) {
+                console.log("[syncFromCloud] 本地比云端多很多礼物，可能是云端未同步完整，推送本地数据");
+                changed = true;
+            }
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
             normalizeGifts();
             renderCatGrid();
             renderTags();
@@ -201,6 +207,11 @@ async function syncFromCloud() {
             renderGrid();
             updateStats();
             setSyncStatus("synced", "已同步到云端");
+
+            // 如果有变化，推送合并后的数据到云端
+            if (changed) {
+                saveGifts();
+            }
         } else {
             throw new Error("云端数据格式异常");
         }
@@ -1174,12 +1185,11 @@ function esc(s) {
 }
 
 function refreshPage() {
-    // 强制从云端刷新：清除 dirty 标志，重新拉取
-    localDirty = false;
-    localStorage.setItem("gift_wishlist_dirty", "false");
+    // 不清除 dirty 标志！如果有未同步的本地修改，syncFromCloud 会先推送
+    // syncFromCloud 的合并策略确保本地数据永远不会丢失
     setSyncStatus("loading", "正在从云端刷新...");
     syncFromCloud();
-    showToast("已刷新 ✓");
+    showToast("正在刷新...");
 }
 
 function showToast(msg) {
