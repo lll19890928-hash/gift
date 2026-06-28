@@ -147,8 +147,23 @@ body {
     cursor: pointer; font-size: 14px;
     margin-left: auto;
     transition: transform 0.3s, border-color 0.2s;
+    flex-shrink: 0;
 }
 .btn-refresh:hover { transform: rotate(180deg); border-color: #ff6b8a; }
+.btn-retry-sync {
+    background: #ff6b8a;
+    color: #fff;
+    border: none;
+    border-radius: 15px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+}
+.btn-retry-sync:active { transform: scale(0.92); }
 
 /* ===== 添加新礼物表单 ===== */
 .add-form-wrap { background: #fff; margin: 0; border-bottom: 2px solid #ff8eb4; }
