@@ -75,7 +75,9 @@ function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 // ===== 初始化 =====
-document.addEventListener("DOMContentLoaded", async () => {
+// ★ 关键修复：app.js 是动态加载的，执行时 DOMContentLoaded 可能已经触发过
+// 必须检查 readyState，否则初始化代码永远不会执行
+function initApp() {
     // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
     loadLocalGifts();
     renderCatGrid();
@@ -86,7 +88,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // 2. 直接用 fetch 连接云端（不需要加载任何外部 SDK）
     syncFromCloud();
-});
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initApp);
+} else {
+    // DOM 已就绪（动态加载脚本的常见情况），直接初始化
+    initApp();
+}
 
 // ===== 云端同步（直接用 fetch REST API，不依赖 SDK） =====
 function setSyncStatus(status, msg) {
