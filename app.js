@@ -1,8 +1,8 @@
 // ===== 配置 =====
 const ADMIN_PWD = "8888";
 const STORAGE_KEY = "gift_wishlist_data";
-const IMAGE_QUALITY = 0.6; // 图片压缩质量（0.6 = 60%品质）
-const IMAGE_MAX_WIDTH = 400; // 图片最大宽度（像素）
+const IMAGE_QUALITY = 0.4; // 图片压缩质量（0.4 = 40%品质，大幅减小体积）
+const IMAGE_MAX_WIDTH = 320; // 图片最大宽度（像素）
 const SUPABASE_URL = "https://yzbjfmuzqhybhgzxooek.supabase.co";
 const SUPABASE_KEY = "sb_publishable_rEW8nZvYGj89wGisKc9Pjw_dyNq4ZdD";
 
@@ -10,7 +10,7 @@ const SUPABASE_KEY = "sb_publishable_rEW8nZvYGj89wGisKc9Pjw_dyNq4ZdD";
 let gifts = [];
 let isAdmin = false;
 let currentFilter = "全部";
-let currentSort = "default"; // default | price-asc | price-desc
+let currentSort = "newest"; // newest | price-asc | price-desc（默认从新到旧）
 let currentPriceRange = "all";
 let searchKeyword = "";
 let syncStatus = "loading"; // loading | synced | offline | error
@@ -500,13 +500,13 @@ function setPriceRange(range) {
 
 // ===== 排序切换 =====
 function cycleSort() {
-    const cycle = ["default", "price-asc", "price-desc"];
+    const cycle = ["newest", "price-asc", "price-desc"];
     const idx = cycle.indexOf(currentSort);
     currentSort = cycle[(idx + 1) % cycle.length];
     const btn = document.getElementById("sort-btn");
-    const labels = {"default":"默认排序", "price-asc":"价格 ↑", "price-desc":"价格 ↓"};
+    const labels = {"newest":"最新优先", "price-asc":"价格 ↑", "price-desc":"价格 ↓"};
     btn.textContent = labels[currentSort];
-    btn.classList.toggle("active", currentSort !== "default");
+    btn.classList.toggle("active", currentSort !== "newest");
     renderGrid();
 }
 
@@ -558,9 +558,10 @@ function renderGrid() {
         );
     }
 
-    // 4. 排序
+    // 4. 排序（默认 newest：按 id 从大到小 = 从新到旧）
     if (currentSort === "price-asc") list.sort((a, b) => a.price - b.price);
     else if (currentSort === "price-desc") list.sort((a, b) => b.price - a.price);
+    else list.sort((a, b) => (b.id || 0) - (a.id || 0)); // newest: id 大的排前面
 
     // 5. 更新结果计数
     const countEl = document.getElementById("result-count");
@@ -764,8 +765,6 @@ function inlineChangeImage(id, event) {
 function updateStats() {
     document.getElementById("stat-total").textContent = gifts.length;
     document.getElementById("stat-want").textContent = gifts.filter(g => !g.received).length;
-    const total = gifts.filter(g => !g.received).reduce((s,g) => s+g.price, 0);
-    document.getElementById("stat-price").textContent = total.toLocaleString();
 }
 
 async function deleteGift(id) {
@@ -1241,5 +1240,5 @@ function showToast(msg) {
     t.textContent = msg;
     t.classList.add("show");
     clearTimeout(t._t);
-    t._t = setTimeout(() => t.classList.remove("show"), 2200);
+    t._t = setTimeout(() => t.classList.remove("show"), 2800);
 }
