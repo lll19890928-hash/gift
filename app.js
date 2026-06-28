@@ -244,9 +244,16 @@ function normalizeGifts() {
 
 async function saveGifts() {
     // 1. 先保存到本地（即时反馈，同步操作）
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+    } catch (e) {
+        console.error("[saveGifts] localStorage 保存失败:", e.message);
+        // localStorage 满了也不影响云端同步
+    }
     localDirty = true;
-    localStorage.setItem("gift_wishlist_dirty", "true"); // 持久化 dirty 状态
+    try {
+        localStorage.setItem("gift_wishlist_dirty", "true"); // 持久化 dirty 状态
+    } catch (e) { /* 忽略 */ }
 
     // 2. 后台同步到云端（不阻塞调用方）
     //    如果已有同步在进行中，标记需要再次同步
@@ -264,15 +271,15 @@ async function saveGifts() {
             try {
                 await saveToCloud(gifts);
                 localDirty = false;
-                localStorage.setItem("gift_wishlist_dirty", "false"); // 清除 dirty
+                try { localStorage.setItem("gift_wishlist_dirty", "false"); } catch(e) {}
                 setSyncStatus("synced", "已同步到云端");
                 console.log("[saveGifts] 云端保存成功");
                 break;
             } catch (e) {
                 retries++;
-                console.error(`[saveGifts] 云端保存失败(第${retries}次)`, e.message);
+                console.error("[saveGifts] 云端保存失败(第" + retries + "次):", e.message);
                 if (retries < 3) {
-                    setSyncStatus("loading", `正在重试云端同步(${retries}/3)...`);
+                    setSyncStatus("loading", "正在重试云端同步(" + retries + "/3)...");
                     await new Promise(r => setTimeout(r, 2000 * retries));
                 } else {
                     setSyncStatus("error", "云端保存失败，已存到本地（下次打开自动重试）");
@@ -375,13 +382,21 @@ async function saveNewGift() {
 
     if (!name || !price) { showToast("请填写名称和价格"); return; }
 
+    // 1. 先添加到数组并立即更新 UI（不管保存是否成功，UI 必须先更新）
     gifts.push({ id: Date.now(), name, price, link, image, cat, received: false });
-    await saveGifts();
     renderCatGrid();
     renderGrid();
     updateStats();
     document.getElementById("add-form-wrap").style.display = "none";
     showToast("添加成功！");
+
+    // 2. 后台保存（本地 + 云端），不阻塞 UI
+    try {
+        saveGifts();
+    } catch (e) {
+        console.error("[saveNewGift] 保存异常:", e);
+        showToast("已添加到本地，云端同步稍后重试");
+    }
 }
 
 // ===== 分类图标区 =====
@@ -641,7 +656,7 @@ async function inlineUpdate(id, field, value) {
     if (field === "link") value = normalizeLink(value);
     if (g[field] === value) return;
     g[field] = value;
-    await saveGifts();
+    try { saveGifts(); } catch (e) { console.error("[inlineUpdate] 保存异常:", e); }
     const savedEl = document.getElementById("saved-" + id);
     if (savedEl) {
         savedEl.style.opacity = "1";
@@ -657,10 +672,10 @@ async function inlineToggleRecv(id, checked) {
     const g = gifts.find(x => x.id === id);
     if (!g) return;
     g.received = checked;
-    await saveGifts();
     renderCatGrid();
     updateStats();
     showToast(checked ? "已标记收到 ✓" : "已标记为想要");
+    try { saveGifts(); } catch (e) { console.error("[inlineToggleRecv] 保存异常:", e); }
 }
 
 function inlineChangeImage(id, event) {
@@ -688,9 +703,9 @@ function inlineChangeImage(id, event) {
             const g = gifts.find(x => x.id === id);
             if (!g) return;
             g.image = dataUrl;
-            await saveGifts();
             renderGrid();
             showToast("图片已更新 ✓");
+            try { saveGifts(); } catch (e) { console.error("[inlineChangeImage] 保存异常:", e); }
         };
         img.src = imgData;
     };
@@ -707,11 +722,11 @@ function updateStats() {
 async function deleteGift(id) {
     if (!confirm("确定删除这个礼物？")) return;
     gifts = gifts.filter(g => g.id !== id);
-    await saveGifts();
     renderCatGrid();
     renderGrid();
     updateStats();
     showToast("已删除");
+    try { saveGifts(); } catch (e) { console.error("[deleteGift] 保存异常:", e); }
 }
 
 function handleNewImage(event) {
