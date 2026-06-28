@@ -227,7 +227,7 @@ async function saveToCloud(data) {
                 updated_at: new Date().toISOString()
             })
         },
-        20000
+        30000
     );
     if (!resp.ok && resp.status !== 201) {
         throw new Error("云端保存失败: " + resp.status);
