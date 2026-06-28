@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>lily酱的许愿池 ✨</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- 禁止缓存：微信内置浏览器、iOS Safari 添加到主屏幕都会缓存 HTML，必须显式禁止 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="style.css?t=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#ff6b8a">
@@ -169,6 +173,14 @@
     </div>
 
     <div class="toast" id="toast"></div>
-    <script src="app.js?v=fixsave4-20260628"></script>
+    <!-- 动态加载 app.js：用时间戳做缓存破坏，确保微信/iOS主屏幕每次都加载最新代码 -->
+    <script>
+    (function(){
+        var s = document.createElement('script');
+        s.src = 'app.js?t=' + Date.now();
+        s.onerror = function(){ console.error('app.js 加载失败'); };
+        document.body.appendChild(s);
+    })();
+    </script>
 </body>
 </html>
