@@ -1,5 +1,19 @@
 /* ===== lily酱的许愿池 - 响应式样式 ===== */
 
+/* ===== 初始化错误提示 ===== */
+.init-error {
+    background: #ff4757;
+    color: #fff;
+    padding: 12px 16px;
+    margin: 10px 15px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(255,71,87,0.3);
+    z-index: 3000;
+}
+
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
 body {
