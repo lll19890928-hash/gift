@@ -103,6 +103,7 @@ function setSyncStatus(status, msg) {
     const bar = document.getElementById("sync-bar");
     const icon = document.getElementById("sync-icon");
     const text = document.getElementById("sync-text");
+    const retryBtn = document.getElementById("btn-retry-sync");
     if (!bar || !icon || !text) return;
 
     const map = {
@@ -116,6 +117,11 @@ function setSyncStatus(status, msg) {
     text.textContent = s.text;
     bar.className = "sync-bar " + s.cls;
     bar.style.display = "flex";
+
+    // 离线/错误时显示重试按钮
+    if (retryBtn) {
+        retryBtn.style.display = (status === "offline" || status === "error") ? "inline-block" : "none";
+    }
 }
 
 function loadLocalGifts() {
@@ -150,84 +156,107 @@ async function syncFromCloud() {
     }
     setSyncStatus("loading", "正在连接云端...");
     cloudPullInProgress = true;
-    try {
-        // 从云端读取数据（GET 超时 15 秒，适应手机慢网络 + 大数据量）
-        const resp = await fetchWithTimeout(
-            SB_REST + "?id=eq.1&select=data",
-            { method: "GET", headers: SB_HEADERS },
-            15000
-        );
 
-        if (!resp.ok) {
-            throw new Error("云端返回错误: " + resp.status);
-        }
+    // ★ 重试机制：最多 3 次，超时递增（20s → 30s → 40s）
+    const timeouts = [20000, 30000, 40000];
+    let lastError = null;
 
-        const rows = await resp.json();
-
-        // ★ 关键：fetch 期间用户可能添加了礼物，再次检查 localDirty
-        if (localDirty) {
-            console.log("[syncFromCloud] fetch 期间本地有修改，跳过覆盖，改为推送本地数据");
-            cloudPullInProgress = false;
-            saveGifts();
-            return;
-        }
-
-        if (!rows || rows.length === 0) {
-            // 云端无记录，上传默认数据
-            const defaults = getDefaultGifts();
-            gifts = defaults;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
-            normalizeGifts();
-            renderCatGrid();
-            renderTags();
-            renderPriceTags();
-            renderGrid();
-            updateStats();
-            setSyncStatus("synced", "已同步到云端");
-            saveGifts();
-        } else if (rows[0].data && Array.isArray(rows[0].data)) {
-            const cloudData = rows[0].data;
-
-            // ★★★ 核心修复：永远合并不替换 ★★★
-            // 策略：本地数据优先，只添加云端有但本地没有的礼物
-            // 这样本地修改永远不会被云端旧数据覆盖
-            const localIds = new Set(gifts.map(g => g.id));
-            const cloudOnly = cloudData.filter(g => !localIds.has(g.id));
-            let changed = false;
-
-            if (cloudOnly.length > 0) {
-                console.log("[syncFromCloud] 云端有 " + cloudOnly.length + " 个本地没有的礼物，合并进来");
-                gifts = [...gifts, ...cloudOnly];
-                changed = true;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            if (attempt > 0) {
+                setSyncStatus("loading", "正在重试连接(" + (attempt + 1) + "/3)...");
+                await new Promise(r => setTimeout(r, 1500));
             }
 
-            // 检查本地是否有云端已删除的礼物（云端数量明显少很多时才处理）
-            // 注意：不主动删除本地礼物，因为可能是云端同步失败导致数据不全
-            if (cloudData.length > 0 && gifts.length > cloudData.length + 5) {
-                console.log("[syncFromCloud] 本地比云端多很多礼物，可能是云端未同步完整，推送本地数据");
-                changed = true;
+            const resp = await fetchWithTimeout(
+                SB_REST + "?id=eq.1&select=data",
+                { method: "GET", headers: SB_HEADERS },
+                timeouts[attempt]
+            );
+
+            if (!resp.ok) {
+                throw new Error("云端返回错误: " + resp.status);
             }
 
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
-            normalizeGifts();
-            renderCatGrid();
-            renderTags();
-            renderPriceTags();
-            renderGrid();
-            updateStats();
-            setSyncStatus("synced", "已同步到云端");
+            const rows = await resp.json();
 
-            // 如果有变化，推送合并后的数据到云端
-            if (changed) {
+            // ★ 关键：fetch 期间用户可能添加了礼物，再次检查 localDirty
+            if (localDirty) {
+                console.log("[syncFromCloud] fetch 期间本地有修改，跳过覆盖，改为推送本地数据");
+                cloudPullInProgress = false;
                 saveGifts();
+                return;
             }
-        } else {
-            throw new Error("云端数据格式异常");
+
+            if (!rows || rows.length === 0) {
+                // 云端无记录，上传默认数据
+                const defaults = getDefaultGifts();
+                gifts = defaults;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+                normalizeGifts();
+                renderCatGrid();
+                renderTags();
+                renderPriceTags();
+                renderGrid();
+                updateStats();
+                setSyncStatus("synced", "已同步到云端");
+                saveGifts();
+            } else if (rows[0].data && Array.isArray(rows[0].data)) {
+                const cloudData = rows[0].data;
+
+                // ★★★ 核心修复：永远合并不替换 ★★★
+                const localIds = new Set(gifts.map(g => g.id));
+                const cloudOnly = cloudData.filter(g => !localIds.has(g.id));
+                let changed = false;
+
+                if (cloudOnly.length > 0) {
+                    console.log("[syncFromCloud] 云端有 " + cloudOnly.length + " 个本地没有的礼物，合并进来");
+                    gifts = [...gifts, ...cloudOnly];
+                    changed = true;
+                }
+
+                if (cloudData.length > 0 && gifts.length > cloudData.length + 5) {
+                    console.log("[syncFromCloud] 本地比云端多很多礼物，可能是云端未同步完整，推送本地数据");
+                    changed = true;
+                }
+
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+                normalizeGifts();
+                renderCatGrid();
+                renderTags();
+                renderPriceTags();
+                renderGrid();
+                updateStats();
+                setSyncStatus("synced", "已同步到云端");
+
+                if (changed) {
+                    saveGifts();
+                }
+            } else {
+                throw new Error("云端数据格式异常");
+            }
+
+            // 成功，退出重试循环
+            cloudPullInProgress = false;
+            return;
+
+        } catch (e) {
+            lastError = e;
+            console.error("[syncFromCloud] 第" + (attempt + 1) + "次失败:", e.message);
+            // 继续下一次重试
         }
-    } catch (e) {
-        console.error("云端同步失败", e);
+    }
+
+    // 3 次都失败
+    console.error("云端同步最终失败", lastError);
+    const errMsg = lastError && lastError.message ? lastError.message : "未知错误";
+    if (errMsg.includes("超时")) {
+        setSyncStatus("offline", "连接超时，使用本地缓存（点重试）");
+    } else {
         setSyncStatus("offline", "离线模式（使用本地缓存）");
     }
+    cloudPullInProgress = false;
+}
     cloudPullInProgress = false;
 }
 
@@ -1199,6 +1228,12 @@ function refreshPage() {
     setSyncStatus("loading", "正在从云端刷新...");
     syncFromCloud();
     showToast("正在刷新...");
+}
+
+// 手动重试连接云端（离线/错误时用户点击）
+function retrySync() {
+    setSyncStatus("loading", "正在重新连接云端...");
+    syncFromCloud();
 }
 
 function showToast(msg) {
