@@ -14,6 +14,8 @@ let currentSort = "default"; // default | price-asc | price-desc
 let currentPriceRange = "all";
 let searchKeyword = "";
 let syncStatus = "loading"; // loading | synced | offline | error
+let localDirty = false; // 有未同步到云端的本地修改
+let cloudSyncInProgress = false; // 云端同步是否正在进行
 
 // 价格区间定义
 const PRICE_RANGES = [
@@ -127,6 +129,13 @@ function loadLocalGifts() {
 }
 
 async function syncFromCloud() {
+    // 如果有未同步的本地修改，不要用云端数据覆盖
+    if (localDirty) {
+        console.log("[syncFromCloud] 本地有未同步修改，跳过云端拉取，先推送本地数据");
+        setSyncStatus("synced", "本地修改同步中...");
+        saveGifts(); // 后台推送本地数据到云端
+        return;
+    }
     setSyncStatus("loading", "正在连接云端...");
     try {
         // 从云端读取数据（GET /rest/v1/wishlist?id=eq.1&select=data）
@@ -174,7 +183,7 @@ async function syncFromCloud() {
     }
 }
 
-// 写入云端（UPSERT）
+// 写入云端（UPSERT）—— 超时设为 20 秒，因为数据含 base64 图片可能较大
 async function saveToCloud(data) {
     const resp = await fetchWithTimeout(
         SB_REST,
@@ -190,7 +199,7 @@ async function saveToCloud(data) {
                 updated_at: new Date().toISOString()
             })
         },
-        8000
+        20000
     );
     if (!resp.ok && resp.status !== 201) {
         throw new Error("云端保存失败: " + resp.status);
@@ -206,18 +215,47 @@ function normalizeGifts() {
 }
 
 async function saveGifts() {
-    // 1. 先保存到本地（即时反馈）
+    // 1. 先保存到本地（即时反馈，同步操作）
     localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+    localDirty = true;
 
-    // 2. 异步同步到云端
-    setSyncStatus("loading", "正在保存到云端...");
-    try {
-        await saveToCloud(gifts);
-        setSyncStatus("synced", "已同步到云端");
-    } catch (e) {
-        console.error("云端保存失败", e);
-        setSyncStatus("error", "云端保存失败，已存到本地");
+    // 2. 后台同步到云端（不阻塞调用方）
+    //    如果已有同步在进行中，标记需要再次同步
+    if (cloudSyncInProgress) {
+        console.log("[saveGifts] 云端同步进行中，稍后自动重试");
+        return;
     }
+    cloudSyncInProgress = true;
+    setSyncStatus("loading", "正在保存到云端...");
+
+    // 异步推送，不 await —— 调用方立即返回
+    (async () => {
+        let retries = 0;
+        while (retries < 3) {
+            try {
+                await saveToCloud(gifts);
+                localDirty = false;
+                setSyncStatus("synced", "已同步到云端");
+                console.log("[saveGifts] 云端保存成功");
+                break;
+            } catch (e) {
+                retries++;
+                console.error(`[saveGifts] 云端保存失败(第${retries}次)`, e.message);
+                if (retries < 3) {
+                    setSyncStatus("loading", `正在重试云端同步(${retries}/3)...`);
+                    await new Promise(r => setTimeout(r, 2000 * retries));
+                } else {
+                    setSyncStatus("error", "云端保存失败，已存到本地（下次打开自动重试）");
+                }
+            }
+        }
+        cloudSyncInProgress = false;
+        // 同步完成后，如果期间又有新的本地修改，自动再同步一次
+        if (localDirty) {
+            console.log("[saveGifts] 检测到新的本地修改，自动再次同步");
+            saveGifts();
+        }
+    })();
 }
 
 function getDefaultGifts() {
