@@ -554,22 +554,24 @@ body {
 /* ===== Toast ===== */
 .toast {
     position:fixed;
-    bottom:30px; left:50%;
-    transform:translateX(-50%) translateY(100px);
-    background:linear-gradient(135deg, #ff7ba0, #ff9ec3);
+    top:50%; left:50%;
+    transform:translate(-50%, -50%) scale(0.6);
+    background:linear-gradient(135deg, #ff7ba0, #ff5a8a);
     color:#fff;
-    padding:12px 26px;
-    border-radius:20px;
-    font-size:clamp(12px, 2vw, 16px);
-    font-weight:700;
-    z-index:2000;
+    padding:24px 40px;
+    border-radius:24px;
+    font-size:clamp(18px, 4vw, 24px);
+    font-weight:800;
+    z-index:3000;
     opacity:0;
-    transition:all 0.3s;
+    transition:all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
     white-space:nowrap;
-    box-shadow:0 4px 20px rgba(255,107,138,0.3);
+    box-shadow:0 8px 40px rgba(255,107,138,0.5);
     max-width: 90vw;
+    text-align:center;
+    pointer-events:none;
 }
-.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.toast.show { opacity:1; transform:translate(-50%, -50%) scale(1); }
 
 /* ===== 搜索 & 排序工具栏 ===== */
 .filter-toolbar {
