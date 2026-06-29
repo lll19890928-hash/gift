@@ -79,6 +79,10 @@ function fetchWithTimeout(url, options, timeoutMs) {
 // ★ 关键修复：app.js 是动态加载的，执行时 DOMContentLoaded 可能已经触发过
 // 必须检查 readyState，否则初始化代码永远不会执行
 function initApp() {
+    // 标记 app.js 已开始执行，index.html 中的安全网会取消自动 fallback
+    window.__appInited = true;
+    if (window.__cancelSafenet) window.__cancelSafenet();
+
     // 1. 先立即从本地加载并渲染，避免页面白屏/卡死
     loadLocalGifts();
     renderCatGrid();
@@ -154,14 +158,16 @@ function loadLocalGifts() {
 }
 
 async function syncFromCloud() {
-    // 如果有未同步的本地修改，不要用云端数据覆盖
+    // 如果本地有未同步修改，后台尝试推送，但**不阻止拉取**——因为手机端可能一直连不上 Supabase，
+    // 若此处直接 return，本地旧数据永远无法通过备用源补齐。
     if (localDirty) {
-        console.log("[syncFromCloud] 本地有未同步修改，跳过云端拉取，先推送本地数据");
-        setSyncStatus("synced", "本地修改同步中...");
-        saveGifts(); // 后台推送本地数据到云端
-        return;
+        console.log("[syncFromCloud] 本地有未同步修改，后台推送同时继续拉取...");
+        setSyncStatus("loading", "本地修改待同步，正在连接云端...");
+        saveGifts(); // 后台推送本地数据到云端（不阻塞）
+        // 不 return，继续尝试拉取/备用源
+    } else {
+        setSyncStatus("loading", "正在连接云端...");
     }
-    setSyncStatus("loading", "正在连接云端...");
     cloudPullInProgress = true;
 
     // ★ 重试机制：最多 3 次，超时递增（20s → 30s → 40s）
@@ -187,14 +193,8 @@ async function syncFromCloud() {
 
             const rows = await resp.json();
 
-            // ★ 关键：fetch 期间用户可能添加了礼物，再次检查 localDirty
-            if (localDirty) {
-                console.log("[syncFromCloud] fetch 期间本地有修改，跳过覆盖，改为推送本地数据");
-                cloudPullInProgress = false;
-                saveGifts();
-                return;
-            }
-
+            // 即使 fetch 期间用户添加了礼物，合并策略也只添加本地没有的 ID，不会覆盖本地新增
+            // 所以这里不 return，继续执行合并
             if (!rows || rows.length === 0) {
                 // 云端无记录，上传默认数据
                 const defaults = getDefaultGifts();
@@ -258,7 +258,8 @@ async function syncFromCloud() {
     console.error("Supabase 连接最终失败", lastError);
     setSyncStatus("loading", "正在尝试备用数据源...");
     try {
-        const resp2 = await fetch("/gift/data.json?t=" + Date.now());
+        // 使用相对路径，避免微信/主屏幕中路径解析异常
+        const resp2 = await fetch("data.json?t=" + Date.now());
         if (resp2.ok) {
             const fallbackData = await resp2.json();
             if (Array.isArray(fallbackData) && fallbackData.length > 0) {
@@ -266,18 +267,22 @@ async function syncFromCloud() {
                 const newOnly = fallbackData.filter(g => !localIds.has(g.id));
                 if (newOnly.length > 0) {
                     gifts = gifts.concat(newOnly);
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
-                    normalizeGifts();
-                    renderCatGrid();
-                    renderTags();
-                    renderPriceTags();
-                    renderGrid();
-                    updateStats();
+                    console.log("[syncFromCloud] 备用源补齐 " + newOnly.length + " 件礼物");
                 }
-                setSyncStatus("synced", "已通过备用源同步");
+                // 无论是否有新增，都重新保存并渲染，确保显示正确
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(gifts));
+                normalizeGifts();
+                renderCatGrid();
+                renderTags();
+                renderPriceTags();
+                renderGrid();
+                updateStats();
+                setSyncStatus("synced", "已通过备用源同步(" + gifts.length + "件)");
                 cloudPullInProgress = false;
                 return;
             }
+        } else {
+            console.error("备用源返回非 200:", resp2.status);
         }
     } catch(e) {
         console.error("备用数据源也失败", e);
@@ -292,10 +297,8 @@ async function syncFromCloud() {
     }
     cloudPullInProgress = false;
 }
-    cloudPullInProgress = false;
-}
 
-// 写入云端（UPSERT）—— 超时设为 20 秒，因为数据含 base64 图片可能较大
+// 写入云端（UPSERT）—— 超时设为 30 秒
 async function saveToCloud(data) {
     const resp = await fetchWithTimeout(
         SB_REST,
