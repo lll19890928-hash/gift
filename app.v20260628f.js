@@ -325,6 +325,30 @@ async function saveToCloud(data) {
     if (!resp.ok && resp.status !== 201) {
         throw new Error("云端保存失败: " + resp.status);
     }
+    cloudPullInProgress = false;
+}
+
+// 写入云端（UPSERT）—— 超时设为 30 秒
+async function saveToCloud(data) {
+    const resp = await fetchWithTimeout(
+        SB_REST,
+        {
+            method: "POST",
+            headers: {
+                ...SB_HEADERS,
+                "Prefer": "resolution=merge-duplicates,return=minimal"
+            },
+            body: JSON.stringify({
+                id: 1,
+                data: data,
+                updated_at: new Date().toISOString()
+            })
+        },
+        30000
+    );
+    if (!resp.ok && resp.status !== 201) {
+        throw new Error("云端保存失败: " + resp.status);
+    }
 }
 
 function normalizeGifts() {
