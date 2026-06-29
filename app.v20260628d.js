@@ -296,10 +296,8 @@ async function syncFromCloud() {
     }
     cloudPullInProgress = false;
 }
-    cloudPullInProgress = false;
-}
 
-// 写入云端（UPSERT）—— 超时设为 20 秒，因为数据含 base64 图片可能较大
+// 写入云端（UPSERT）—— 超时设为 30 秒
 async function saveToCloud(data) {
     const resp = await fetchWithTimeout(
         SB_REST,
