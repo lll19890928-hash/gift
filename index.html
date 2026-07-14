@@ -54,7 +54,23 @@
     <!-- 管理员工具栏（登录后显示） -->
     <div class="admin-toolbar" id="admin-toolbar" style="display:none;">
         <button class="btn-add-inline" onclick="toggleAddForm()">＋ 添加新礼物</button>
+        <button class="btn-add-inline" onclick="exportData()" style="background:#17a2b8;">📥 导出数据</button>
+        <button class="btn-add-inline" onclick="toggleImportForm()" style="background:#6c757d;">📤 导入数据</button>
+        <button class="btn-add-inline" onclick="forceSyncCloud()" style="background:#e67e22;">☁️ 强制同步</button>
         <button class="btn-exit-inline" onclick="exitAdmin()">退出管理</button>
+    </div>
+
+    <!-- 导入数据表单 -->
+    <div class="add-form-wrap" id="import-form-wrap" style="display:none;">
+        <div class="add-form-inner">
+            <div class="add-form-title">📤 导入数据</div>
+            <div class="fetch-section">
+                <div class="fetch-title">粘贴导出的JSON数据</div>
+                <textarea id="import-textarea" placeholder='将导出的JSON数据粘贴到这里，然后点击"合并导入"' style="width:100%;height:200px;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:12px;"></textarea>
+                <button type="button" class="fetch-btn" onclick="importData()" style="width:100%;margin-top:8px;">合并导入并同步到云端</button>
+                <div id="import-result" style="margin-top:8px;font-size:14px;"></div>
+            </div>
+        </div>
     </div>
 
     <!-- 添加新礼物表单（内联展开，非弹窗） -->
@@ -215,6 +231,6 @@ window.addEventListener('error', function(e) {
 })();
     </script>
     <!-- 确保 app.js 一定能加载并执行 -->
-    <script src="app.v20260628g.js" onerror="console.error('app.v20260628g.js 加载失败'); document.getElementById('init-error').style.display='block'; document.getElementById('init-error').textContent='app.js加载失败，请检查网络后刷新';"></script>
+    <script src="app.v20260714a.js" onerror="console.error('app.v20260714a.js 加载失败'); document.getElementById('init-error').style.display='block'; document.getElementById('init-error').textContent='app.js加载失败，请检查网络后刷新';"></script>
 </body>
 </html>
